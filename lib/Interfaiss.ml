@@ -14,7 +14,6 @@
 *)
 
 open BiOCamLib
-open Better
 
 include (
   struct
@@ -30,26 +29,18 @@ include (
       | PQ of int * int
       | HSNW of int * int
     type t
-    external make: index_t -> F32BAVector.t -> t = "InterfaissMake"
-    let make ?(index_type = Flat) vectors = make index_type vectors
+    external of_vectors: index_t -> F32BAVector.t -> t = "InterfaissMake"
+    let of_vectors ?(index_type = Flat) vectors = of_vectors index_type vectors
 
-    module XYZ = IntMap
-
-  end (*: sig
-    module F32BAVector = Numbers.Bigarray.Vector (
-      struct
-        include Numbers.Float
-        type elt_t = Bigarray.float32_elt
-        let elt = Bigarray.Float32
-      end
-    )
+  end: sig
+    module F32BAVector: Numbers.Vector_t
     type t
     type index_t =
       | Flat
       | PQ of int * int
       | HSNW of int * int
-    val make ?index_type:index_t -> Bigarray -> t
-  end *)
-)
+    val of_vectors: ?index_type:index_t -> F32BAVector.t -> t
 
+  end
+)
 
