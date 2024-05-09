@@ -47,18 +47,18 @@ CAMLprim value InterfaissCreate(value o_index_type,value o_n) {
 CAMLprim value InterfaissAdd(value o_idx,value o_vectors) {
   CAMLparam2(o_idx,o_vectors);
   index_t* idx=*((index_t**)Data_abstract_val(o_idx));
-  int dim_x=Caml_ba_array_val(o_vectors)->dim[0];
-  int dim_y=Caml_ba_array_val(o_vectors)->dim[1];
-  interfaiss_add_data_to_index(idx,dim_x,dim_y,Caml_ba_data_val(o_vectors));
+  int n=Caml_ba_array_val(o_vectors)->dim[0];
+  int d=Caml_ba_array_val(o_vectors)->dim[1];
+  interfaiss_add_data_to_index(idx,d,n,Caml_ba_data_val(o_vectors));
   return Val_int(0);
 }
 
 CAMLprim value InterfaissTrain(value o_idx,value o_vectors) {
   CAMLparam2(o_idx,o_vectors);
   index_t* idx=*((index_t**)Data_abstract_val(o_idx));
-  int dim_x=Caml_ba_array_val(o_vectors)->dim[0];
-  int dim_y=Caml_ba_array_val(o_vectors)->dim[1];
-  interfaiss_train_index(idx,dim_x,dim_y,Caml_ba_data_val(o_vectors));
+  int n=Caml_ba_array_val(o_vectors)->dim[0];
+  int d=Caml_ba_array_val(o_vectors)->dim[1];
+  interfaiss_train_index(idx,d,n,Caml_ba_data_val(o_vectors));
   return Val_int(0);
 }
 
