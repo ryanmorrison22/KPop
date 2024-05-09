@@ -19,16 +19,54 @@
 #include <caml/mlvalues.h>
 #include <caml/memory.h>
 #include <caml/alloc.h>
-//#include <caml/fail.h>
+#include <caml/fail.h>
+#include <caml/bigarray.h>
 
-CAMLprim value InterfaissMake(value o_index_type,value o_vector) {
-
-
-
-
-
+CAMLprim value InterfaissCreate(value o_index_type,value o_n) {
+  CAMLparam2(o_index_type,o_n);
+  CAMLlocal1(o_res);
+  /* Remember that the OCaml definition of index_t is
+    type index_t =
+      | Flat
+      | PQ of int * int
+      | HNSW of int * int */
+  index_t* res;
+  if (o_index_type==Val_int(0))
+    res=interfaiss_create_flat_index(Int_val(o_n));
+  else if (Tag_val(o_index_type)==0)
+    res=interfaiss_create_PQ_index(Int_val(o_n),Int_val(Field(o_index_type,0)),Int_val(Field(o_index_type,1)));
+  else if (Tag_val(o_index_type)==1)
+    res=interfaiss_create_HNSW_index(Int_val(o_n),Int_val(Field(o_index_type,0)),Int_val(Field(o_index_type,1)));
+  else
+    caml_failwith("InterfaissMake");
+  o_res=caml_alloc(1,Abstract_tag);
+  *((index_t**)Data_abstract_val(o_res))=res;
+  CAMLreturn(o_res); 
 }
 
+CAMLprim value InterfaissAdd(value o_idx,value o_vectors) {
+  CAMLparam2(o_idx,o_vectors);
+  index_t* idx=*((index_t**)Data_abstract_val(o_idx));
+  int dim_x=Caml_ba_array_val(o_vectors)->dim[0];
+  int dim_y=Caml_ba_array_val(o_vectors)->dim[1];
+  interfaiss_add_data_to_index(idx,dim_x,dim_y,Caml_ba_data_val(o_vectors));
+  return Val_int(0);
+}
+
+CAMLprim value InterfaissTrain(value o_idx,value o_vectors) {
+  CAMLparam2(o_idx,o_vectors);
+  index_t* idx=*((index_t**)Data_abstract_val(o_idx));
+  int dim_x=Caml_ba_array_val(o_vectors)->dim[0];
+  int dim_y=Caml_ba_array_val(o_vectors)->dim[1];
+  interfaiss_train_index(idx,dim_x,dim_y,Caml_ba_data_val(o_vectors));
+  return Val_int(0);
+}
+
+CAMLprim value InterfaissDelete(value o_idx) {
+  CAMLparam1(o_idx);
+  interfaiss_free_index(*((index_t**)Data_abstract_val(o_idx)));
+  return Val_int(0);
+}
 
 /*
 CAMLprim value Bundl_Aligner(
