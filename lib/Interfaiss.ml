@@ -13,34 +13,39 @@
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 *)
 
-open BiOCamLib
-
 include (
   struct
-    module F32BAVector = Numbers.Bigarray.Vector (
-      struct
-        include Numbers.Float
-        type elt_t = Bigarray.float32_elt
-        let elt = Bigarray.Float32
-      end
-    )
     type index_t =
       | Flat
       | PQ of int * int
-      | HSNW of int * int
+      | HNSW of int * int
     type t
-    external of_vectors: index_t -> F32BAVector.t -> t = "InterfaissMake"
-    let of_vectors ?(index_type = Flat) vectors = of_vectors index_type vectors
+    external create: index_t -> int -> t = "InterfaissCreate"
+    let create ?(index_type = Flat) n =
+      try
+        create index_type n
+      with _ ->
+        (* This might happen if the definition of index_t get out of synchro with the C interface *)
+        assert false
+    type vectors_t = (float, Bigarray.float32_elt, Bigarray.c_layout) Bigarray.Array2.t
+    external add: t -> vectors_t -> unit = "InterfaissAdd"
+    external train: t -> vectors_t -> unit = "InterfaissTrain"
 
+
+
+    external delete: t -> unit = "InterfaissDelete"
   end: sig
-    module F32BAVector: Numbers.Vector_t
-    type t
     type index_t =
       | Flat
       | PQ of int * int
-      | HSNW of int * int
-    val of_vectors: ?index_type:index_t -> F32BAVector.t -> t
+      | HNSW of int * int
+    type t
+    val create: ?index_type:index_t -> int -> t
+    type vectors_t = (float, Bigarray.float32_elt, Bigarray.c_layout) Bigarray.Array2.t
+    val add: t -> vectors_t -> unit
+    val train: t -> vectors_t -> unit
 
+    val delete: t -> unit
   end
 )
 
