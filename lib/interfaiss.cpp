@@ -49,11 +49,22 @@ index_t* interfaiss_create_HNSW_index(int d, int m, int) {
     return idx;
 }
 
-void interfaiss_query_index(index_t* idx, int d, idx_t n, const dim_t* queries, int k, float* distances, idx_t* indices) {
+void interfaiss_query_index(index_t* idx, int d, idx_t n, const dim_t* queries, idx_t* k, float** distances, idx_t** indices) {
     if (idx->d != d) {
         throw std::invalid_argument("Dimension mismatch between index and queries");
     }
-    reinterpret_cast<faiss::Index*>(idx->index)->search(n, queries, k, distances, reinterpret_cast<faiss::idx_t*>(indices));
+
+    faiss::idx_t k_idx = reinterpret_cast<faiss::Index*>(idx->index)->ntotal;
+    *k = *k < k_idx ? *k : k_idx;
+
+    float *flat_distances = (float*)malloc(n*(*k)*sizeof(float));
+    idx_t *flat_indices   = (idx_t*)malloc(n*(*k)*sizeof(idx_t));
+
+    reinterpret_cast<faiss::Index*>(idx->index)->search(n, queries, *k, flat_distances, reinterpret_cast<faiss::idx_t*>(flat_indices));
+
+    *distances = flat_distances;
+    *indices   = flat_indices;
+    return;
 }
 
 void interfaiss_add_data_to_index(index_t* idx, int d, idx_t n, const dim_t* data) {
@@ -61,6 +72,7 @@ void interfaiss_add_data_to_index(index_t* idx, int d, idx_t n, const dim_t* dat
         throw std::invalid_argument("Dimension mismatch between index and data");
     }
     reinterpret_cast<faiss::Index*>(idx->index)->add(n, data);
+    return;
 }
 
 void interfaiss_train_index(index_t* idx, int d, idx_t n, const dim_t* data) {
@@ -87,11 +99,13 @@ void interfaiss_train_index(index_t* idx, int d, idx_t n, const dim_t* data) {
             fprintf(stderr,"Training not required or applicable for this index type.\n");
             break;
     }
+    return;
 }
 
 void interfaiss_free_index(index_t* idx) {
     delete reinterpret_cast<faiss::Index*>(idx->index);
     delete idx;
+    return;
 }
 
 }

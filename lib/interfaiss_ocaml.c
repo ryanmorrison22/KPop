@@ -49,7 +49,7 @@ CAMLprim value InterfaissAdd(value o_idx,value o_vectors) {
   index_t* idx=*((index_t**)Data_abstract_val(o_idx));
   int n=Caml_ba_array_val(o_vectors)->dim[0];
   int d=Caml_ba_array_val(o_vectors)->dim[1];
-  interfaiss_add_data_to_index(idx,d,n,Caml_ba_data_val(o_vectors));
+  interfaiss_add_data_to_index(idx,d,(idx_t)n,Caml_ba_data_val(o_vectors));
   return Val_int(0);
 }
 
@@ -58,7 +58,7 @@ CAMLprim value InterfaissTrain(value o_idx,value o_vectors) {
   index_t* idx=*((index_t**)Data_abstract_val(o_idx));
   int n=Caml_ba_array_val(o_vectors)->dim[0];
   int d=Caml_ba_array_val(o_vectors)->dim[1];
-  interfaiss_train_index(idx,d,n,Caml_ba_data_val(o_vectors));
+  interfaiss_train_index(idx,d,(idx_t)n,Caml_ba_data_val(o_vectors));
   return Val_int(0);
 }
 
@@ -68,13 +68,19 @@ CAMLprim value InterfaissQuery(value o_idx,value o_vectors,value o_k) {
   index_t* idx=*((index_t**)Data_abstract_val(o_idx));
   int n=Caml_ba_array_val(o_vectors)->dim[0];
   int d=Caml_ba_array_val(o_vectors)->dim[1];
-  int k=Int_val(o_k);
-  if (k<0)
+  idx_t k=(idx_t)Int_val(o_k);
+  if (k<=0)
     caml_failwith("InterfaissQuery");
-
-  interfaiss_query_index(idx,d,n,Caml_ba_data_val(o_vectors),k, float* distances, idx_t* indices)
-
-
+  float* distances;
+  idx_t* indices;
+  interfaiss_query_index(idx,d,(idx_t)n,Caml_ba_data_val(o_vectors),&k,&distances,&indices);
+  o_res=caml_alloc_tuple(2);
+  long dims[2];
+  dims[0]=(long)n;
+  dims[1]=(long)k;
+  Store_field(o_res,0,caml_ba_alloc(CAML_BA_FLOAT32|CAML_BA_C_LAYOUT,2,distances,dims));
+  // BEWARE: THIS IS DEPENDENT ON THE TYPE USED BY faiss
+  Store_field(o_res,1,caml_ba_alloc(CAML_BA_INT64|CAML_BA_C_LAYOUT,2,indices,dims));
   CAMLreturn(o_res);
 }
 

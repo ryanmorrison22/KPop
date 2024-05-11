@@ -47,7 +47,7 @@ index_t* interfaiss_create_PQ_index(int d, int m, int n_bits);
 // HNSW index parameters are: hyperparameter M, hyperparameter efConstruction (efConstruction not used yet)
 index_t* interfaiss_create_HNSW_index(int d, int m, int ef_construction);
 
-void interfaiss_query_index(index_t* idx, int d, idx_t n, const dim_t* queries, int k, float* distances, idx_t* indices);
+void interfaiss_query_index(index_t* idx, int d, idx_t n, const dim_t* queries, idx_t* k, float** distances, idx_t** indices);
 void interfaiss_add_data_to_index(index_t* idx, int d, idx_t n, const dim_t* data);
 void interfaiss_train_index(index_t *idx, int d, idx_t n, const dim_t *data);
 void interfaiss_free_index(index_t* idx);
