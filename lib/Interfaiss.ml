@@ -31,7 +31,7 @@ include (
     type offsets_t = (int, Bigarray.int64_elt, Bigarray.c_layout) Bigarray.Array2.t
     external add: t -> vectors_t -> unit = "InterfaissAdd"
     external train: t -> vectors_t -> unit = "InterfaissTrain"
-    external search: t -> vectors_t -> int -> vectors_t * offsets_t = "InterfaissSearch"
+    external query: t -> vectors_t -> int -> vectors_t * offsets_t = "InterfaissQuery"
     external delete: t -> unit = "InterfaissDelete"
   end: sig
     type index_t =
@@ -44,7 +44,7 @@ include (
     type offsets_t = (int, Bigarray.int64_elt, Bigarray.c_layout) Bigarray.Array2.t
     val add: t -> vectors_t -> unit
     val train: t -> vectors_t -> unit
-    val search: t -> vectors_t -> int -> vectors_t * offsets_t
+    val query: t -> vectors_t -> int -> vectors_t * offsets_t
     val delete: t -> unit
   end
 )
