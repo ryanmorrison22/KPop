@@ -62,6 +62,22 @@ CAMLprim value InterfaissTrain(value o_idx,value o_vectors) {
   return Val_int(0);
 }
 
+CAMLprim value InterfaissQuery(value o_idx,value o_vectors,value o_k) {
+  CAMLparam3(o_idx,o_vectors,o_k);
+  CAMLlocal1(o_res);
+  index_t* idx=*((index_t**)Data_abstract_val(o_idx));
+  int n=Caml_ba_array_val(o_vectors)->dim[0];
+  int d=Caml_ba_array_val(o_vectors)->dim[1];
+  int k=Int_val(o_k);
+  if (k<0)
+    caml_failwith("InterfaissQuery");
+
+  interfaiss_query_index(idx,d,n,Caml_ba_data_val(o_vectors),k, float* distances, idx_t* indices)
+
+
+  CAMLreturn(o_res);
+}
+
 CAMLprim value InterfaissDelete(value o_idx) {
   CAMLparam1(o_idx);
   interfaiss_free_index(*((index_t**)Data_abstract_val(o_idx)));
