@@ -29,9 +29,10 @@ include (
         assert false
     type vectors_t = (float, Bigarray.float32_elt, Bigarray.c_layout) Bigarray.Array2.t
     type offsets_t = (int64, Bigarray.int64_elt, Bigarray.c_layout) Bigarray.Array2.t
+    type distances_t = (float, Bigarray.float32_elt, Bigarray.c_layout) Bigarray.Array2.t
     external add: t -> vectors_t -> unit = "InterfaissAdd"
     external train: t -> vectors_t -> unit = "InterfaissTrain"
-    external query: t -> vectors_t -> int -> vectors_t * offsets_t = "InterfaissQuery"
+    external query: t -> vectors_t -> int -> offsets_t * distances_t = "InterfaissQuery"
     external delete: t -> unit = "InterfaissDelete"
   end: sig
     type index_t =
@@ -42,9 +43,10 @@ include (
     val create: ?index_type:index_t -> int -> t
     type vectors_t = (float, Bigarray.float32_elt, Bigarray.c_layout) Bigarray.Array2.t
     type offsets_t = (int64, Bigarray.int64_elt, Bigarray.c_layout) Bigarray.Array2.t
+    type distances_t = (float, Bigarray.float32_elt, Bigarray.c_layout) Bigarray.Array2.t
     val add: t -> vectors_t -> unit
     val train: t -> vectors_t -> unit
-    val query: t -> vectors_t -> int -> vectors_t * offsets_t
+    val query: t -> vectors_t -> int -> offsets_t * distances_t
     val delete: t -> unit
   end
 )
