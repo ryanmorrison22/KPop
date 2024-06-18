@@ -78,9 +78,9 @@ CAMLprim value InterfaissQuery(value o_idx,value o_vectors,value o_k) {
   long dims[2];
   dims[0]=(long)n;
   dims[1]=(long)k;
-  Store_field(o_res,0,caml_ba_alloc(CAML_BA_FLOAT32|CAML_BA_C_LAYOUT,2,distances,dims));
-  // BEWARE: THIS IS DEPENDENT ON THE TYPE USED BY faiss
-  Store_field(o_res,1,caml_ba_alloc(CAML_BA_INT64|CAML_BA_C_LAYOUT,2,indices,dims));
+  // BEWARE: THIS STATEMENT DEPENDS ON THE TYPE USED BY faiss
+  Store_field(o_res,0,caml_ba_alloc(CAML_BA_INT64|CAML_BA_C_LAYOUT,2,indices,dims));
+  Store_field(o_res,1,caml_ba_alloc(CAML_BA_FLOAT32|CAML_BA_C_LAYOUT,2,distances,dims));
   CAMLreturn(o_res);
 }
 
