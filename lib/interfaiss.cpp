@@ -60,7 +60,7 @@ void interfaiss_query_index(index_t* idx, int d, idx_t n, const dim_t* queries, 
     float *flat_distances = (float*)malloc(n*(*k)*sizeof(float));
     idx_t *flat_indices   = (idx_t*)malloc(n*(*k)*sizeof(idx_t));
 
-    reinterpret_cast<faiss::Index*>(idx->index)->search(n, queries, *k, flat_distances, reinterpret_cast<faiss::idx_t*>(flat_indices));
+    reinterpret_cast<faiss::Index*>(idx->index)->search(n, queries, *k, flat_distances, flat_indices);
 
     *distances = flat_distances;
     *indices   = flat_indices;
