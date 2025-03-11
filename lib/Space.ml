@@ -41,7 +41,8 @@ module Distance:
     (* We make the type private to implement constraints *)
     type t = private
       | Euclidean
-      | Cosine (* Same as Euclidean^2 / 2 *)
+      | Cosine (* Same as Euclidean^2 / 2, or 1 - cos theta (in [0, 2]) *)
+      | Angle (* Same as theta in radians, i.e. arccos (1 - Euclidean^2 / 2) *)
       | Minkowski of float (* Theoretically speaking, the parameter should be an integer *)
     exception Incompatible_vector_lengths of int * int * int
     (* What happens when argument vectors have incompatible lengths *)
@@ -54,8 +55,6 @@ module Distance:
     (* Arguments are distance function, metric, a, b.
        We also parameterise the computation with two arbitrary adaptor functions for a and b,
         which allow, for instance, to implement normalised differences *)
-    val compute_unscaled: ?adaptor_a:(float -> float) -> ?adaptor_b:(float -> float) ->
-                 t -> Float.Array.t -> Float.Array.t -> Float.Array.t -> float
     val compute: ?adaptor_a:(float -> float) -> ?adaptor_b:(float -> float) ->
                  t -> Float.Array.t -> Float.Array.t -> Float.Array.t -> float
     exception Unknown_distance of string
@@ -140,6 +139,7 @@ module Distance:
     type t =
       | Euclidean
       | Cosine
+      | Angle
       | Minkowski of float
     exception Incompatible_vector_lengths of int * int * int
     type mode_t =
@@ -149,37 +149,27 @@ module Distance:
     let set_mode new_mode = mode := new_mode
     let compute_norm_unscaled_component f metr diff =
       match f with
-      | Euclidean | Cosine ->
+      | Euclidean | Cosine | Angle ->
         diff *. diff *. metr
       | Minkowski power ->
         ((abs_float diff) ** power) *. metr
-    let [@warning "-32"] compute_unscaled_component ?(adaptor_a = (fun x -> x)) ?(adaptor_b = (fun x -> x)) f m a b =
-      compute_norm_unscaled_component f m (adaptor_a a -. adaptor_b b)
-    (* Unclear whether we really need to keep the unscaled versions *)
-    let scale = function
-      | Euclidean ->
-        sqrt
-      | Cosine ->
-        fun x -> x /. 2.
-      | Minkowski power ->
-        fun x -> x ** (1. /. power)
-    let compute_norm_unscaled f m v =
-      (* We could define everything in terms of compute_unscaled_component,
-            but we rewrite things in order to optimise the switch out of the cycle *)
-      let acc = ref 0. in
-      Float.Array.iteri begin
-        match f with
-        | Euclidean | Cosine ->
-          (fun i el ->
-            acc := !acc +. (el *. el *. Float.Array.get m i))
-        | Minkowski power ->
-          (fun i el ->
-            acc := !acc +. (((abs_float el) ** power) *. Float.Array.get m i))
-      end v;
-      !acc
+    let ( .@() ) = Float.Array.( .@() )
     let compute_norm f m v =
-      compute_norm_unscaled f m v |> scale f
-    let compute_unscaled ?(adaptor_a = (fun x -> x)) ?(adaptor_b = (fun x -> x)) f m a b =
+      let acc = ref 0. in
+      match f with
+      | Euclidean | Cosine | Angle ->
+        Float.Array.iteri
+          (fun i el ->
+            acc := !acc +. (el *. el *. m.@(i)))
+          v;
+        sqrt !acc
+      | Minkowski power ->
+        Float.Array.iteri
+          (fun i el ->
+            acc := !acc +. (((abs_float el) ** power) *. m.@(i)))
+          v;
+        !acc ** (1. /. power)
+    let compute ?(adaptor_a = (fun x -> x)) ?(adaptor_b = (fun x -> x)) f m a b =
       let length_a = Float.Array.length a and length_m = Float.Array.length m and length_b = Float.Array.length b in
       if length_a <> length_m || length_m <> length_b then begin
         match !mode with
@@ -189,20 +179,26 @@ module Distance:
         (* We could define everything in terms of compute_unscaled_component,
             but we rewrite things in order to optimise the switch out of the cycle *)
         let acc = ref 0. in
-        Float.Array.iteri begin
-          match f with
-          | Euclidean | Cosine ->
-            (fun i el_a ->
-              let diff = adaptor_a el_a -. (Float.Array.get b i |> adaptor_b) in
-              acc := !acc +. (diff *. diff *. Float.Array.get m i))
-          | Minkowski power ->
-            (fun i el_a ->
-              let diff = abs_float (adaptor_a el_a -. (Float.Array.get b i |> adaptor_b)) in
-              acc := !acc +. ((diff ** power) *. Float.Array.get m i))
-        end a;
-        !acc
-    let compute ?(adaptor_a = (fun x -> x)) ?(adaptor_b = (fun x -> x)) f m a b =
-      compute_unscaled ~adaptor_a ~adaptor_b f m a b |> scale f
+        match f with
+        | Minkowski power ->
+          Float.Array.iter2i
+            (fun i el_a el_b ->
+              let diff = abs_float (adaptor_a el_a -. adaptor_b el_b) in
+              acc := !acc +. ((diff ** power) *. m.@(i)))
+            a b;
+          !acc ** (1. /. power)
+        | _ ->
+          Float.Array.iter2i
+            (fun i el_a el_b ->
+              let diff = adaptor_a el_a -. adaptor_b el_b in
+              acc := !acc +. (diff *. diff *. m.@(i)))
+            a b;
+          begin match f with
+          | Euclidean -> sqrt !acc
+          | Cosine -> !acc /. 2.
+          | Angle -> acos (1. -. !acc /. 2.)
+          | _ -> assert false
+          end
     exception Unknown_distance of string
     exception Negative_power of float
     let of_string_re = Str.regexp "[()]"
@@ -211,6 +207,8 @@ module Distance:
         Euclidean
       | "cosine" ->
         Cosine
+      | "angle" ->
+        Angle
       | s ->
         match Str.full_split of_string_re s with
         | [ Text "minkowski"; Delim "("; Text power; Delim ")" ] ->
@@ -227,6 +225,7 @@ module Distance:
     let to_string = function
       | Euclidean -> "euclidean"
       | Cosine -> "cosine"
+      | Angle -> "angle"
       | Minkowski power -> Printf.sprintf "minkowski(%.15g)" power
     module Iterator =
       struct
