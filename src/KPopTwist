@@ -98,16 +98,17 @@ cat <<'_____'
   coords<-cacoord(stuff_ca,cols=TRUE)
   dnames<-colnames(coords)
   data.table::fwrite(as.data.table(coords,keep.rownames=TRUE),paste0(output,".KPopTwisted.txt"),quote=TRUE,sep="\t",buffMB=64)
-  koords<-as.data.table(cacoord(stuff_ca,rows=TRUE),keep.rownames=TRUE)
+  koords<-as.data.table(cacoord(stuff_ca,rows=TRUE))
+  rownames(koords)<-kmers
   if (output_kmers!="")
-    data.table::fwrite(koords,paste0(output_kmers,".KPopTwisted.txt"),quote=TRUE,sep="\t",buffMB=64)
+    data.table::fwrite(koords,paste0(output_kmers,".KPopTwisted.txt"),row.names=TRUE,quote=TRUE,sep="\t",buffMB=64)
   conditional_echo("[10/16] Writing inertia")
   inertia<-t(stuff_ca$sv^2/sum(stuff_ca$sv^2))
   colnames(inertia)<-dnames
   rownames(inertia)<-c("inertia")
   data.table::fwrite(as.data.table(inertia,keep.rownames=TRUE),paste0(output,".KPopInertia.txt"),quote=TRUE,sep="\t",buffMB=64)
   conditional_echo("[11/16] Normalizing twister")
-  twister<-koords[,Map("/",.SD,stuff_ca$sv),.SDcols=dnames] # koords has an additional colums called "rn"
+  twister<-koords[,Map("/",.SD,stuff_ca$sv)]
   conditional_echo("[12/16] Transposing twister")
   twister<-data.table::transpose(twister)
   colnames(twister)<-kmers
@@ -130,6 +131,9 @@ if [[ "$TEMPORARIES" == "false" ]]; then
   rm "${TMPDIR}/TABLE.KPopCounter.txt" "${TMPDIR}/NAMES.KPopCounter.txt"
   rmdir "${TMPDIR}"
   rm "${PREFIX_OUT}.KPopTwisted.txt" "${PREFIX_OUT}.KPopInertia.txt" "${PREFIX_OUT}.KPopTwister.txt"
+  if [[ "$PREFIX_OUT_KMERS" != "" ]]; then
+    rm "${PREFIX_OUT_KMERS}.KPopTwisted.txt"
+  fi
 fi
 
 conditional_echo "$(date +"%c"): All done."
