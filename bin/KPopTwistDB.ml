@@ -107,8 +107,8 @@ module Parameters =
 
 let info = {
   Tools.Argv.name = "KPopTwistDB";
-  version = "38";
-  date = "10-Feb-2025"
+  version = "39";
+  date = "10-Mar-2025"
 } and authors = [
   "2022-2025", "Paolo Ribeca", "paolo.ribeca@gmail.com"
 ]
@@ -202,16 +202,19 @@ let () =
         Add_kmers_files_to_twisted
           (TA.get_parameter () |> String.Split.on_char_as_list ',') |> List.accum Parameters.program);
     [ "--distance"; "--distance-function" ],
-      Some "'euclidean'|'cosine'|'minkowski(<non_negative_float>)'",
+      Some "'euclidean'|'cosine'|'angle'|'minkowski(<non_negative_float>)'",
       [ "set the function to be used when computing distances.";
         "The parameter for 'minkowski' is the power.";
-        "Note that 'euclidean' is the same as 'minkowski(2)',";
-        "and 'cosine' is the same as ('euclidean'^2)/2" ],
+        "Note that: 'euclidean' is the same as 'minkowski(2)';";
+        "'cosine' is the same as ('euclidean'^2)/2, or 1 - cos theta;";
+        "'angle' is the same as arccos(1 - ('euclidean'^2)/2), or theta,";
+        "where theta is the relative angle between the two embeddings" ],
       TA.Default (fun () -> Space.Distance.to_string Defaults.distance),
       (fun _ -> Set_distance (TA.get_parameter () |> Space.Distance.of_string) |> List.accum Parameters.program);
     [ "--distance-normalize"; "--distance-normalization" ],
       Some "'true'|'false'",
-      [ "whether to normalize twisted vectors before computing distances" ],
+      [ "whether to normalize twisted vectors before computing distances.";
+        "It must be 'true' when the distance function is 'cosine' or 'angle'" ],
       TA.Default (fun () -> string_of_bool Defaults.distance_normalize),
       (fun _ -> Set_distance_normalize (TA.get_parameter_boolean ()) |> List.accum Parameters.program);
     [ "-m"; "--metric"; "--metric-function" ],
@@ -227,7 +230,8 @@ let () =
     [ "-e"; "--embeddings"; "--compute-embeddings"; "--twisted-to-embeddings" ],
       None,
       [ "compute embeddings from the vectors present in the twisted register";
-        "using the metric provided by the twister present in the twister register.";
+        "using the metric provided by the twister present in the twister register";
+        "and the specified distance function and normalization.";
         "The result will be placed in the embeddings register" ],
       TA.Optional,
       (fun _ -> List.accum Parameters.program Embeddings_from_twisted);
@@ -365,7 +369,9 @@ let () =
   end;
   if !Parameters.verbose then
     TA.header ();
-  let twister_loaded = ref false in
+  (* We perform a dry run of the program to detect possible errors *)
+  let twister_loaded = ref false
+  and distance = ref Defaults.distance and distance_normalize = ref Defaults.distance_normalize in
   List.iter
     (function
       | Binary_to_register (Twister, _) | Tables_to_register (Twister, _) ->
@@ -376,17 +382,30 @@ let () =
           TA.parse_error
             "Option '-k' requires a twister in the twister register!"
       | Register_to_tables (Metrics, _) | Embeddings_from_twisted
-      | Distances_from_twisted_binary _ | Summary_from_twisted_binary _ ->
+      | Distances_from_twisted_binary _ | Summary_from_twisted_binary _ as w ->
         (* A twister must have been loaded to provide the metric induced by inertia *)
         if not !twister_loaded then
           TA.parse_error
-            "Options '-O m', '-e', '-d', and '-s' require a twister in the twister register to provide a metric!"
+            "Options '-O m', '-e', '-d', and '-s' require a twister in the twister register to provide a metric!";
+        begin match w with
+        | Register_to_tables _ -> ()
+        | Embeddings_from_twisted | Distances_from_twisted_binary _ | Summary_from_twisted_binary _ ->
+          begin match !distance, !distance_normalize with
+          | Space.Distance.Cosine, false | Angle, false ->
+            TA.parse_error "Distances 'cosine' and 'angle' require embeddings to be normalized"
+          | Cosine, true | Angle, true | Euclidean, _ | Minkowski _, _ -> ()
+          end
+        | _ -> assert false
+        end
       | Register_to_binary (Metrics, _) ->
         (* This is not really an option *)
         assert false
-      | Set_distance _ | Set_distance_normalize _ | Set_metric _ ->
-        (* If we really wanted to, we might add these too *)
-        ()
+      (* If we really wanted to, we might check whether the twister is loded here too *)
+      | Set_distance dist -> distance := dist
+      (* If we really wanted to, we might check whether the twister is loded here too *)
+      | Set_distance_normalize norm -> distance_normalize := norm
+      (* If we really wanted to, we might check whether the twister is loded here too *)
+      | Set_metric _ -> ()
       | Empty _
       | Binary_to_register (Metrics, _) | Binary_to_register (Twisted, _)
       | Binary_to_register (Embeddings, _) | Binary_to_register (Distances, _)

@@ -82,7 +82,7 @@ module Base:
         Incompatible_geometries (Array.make d "", m.col_names) |> raise;
       let inv_power =
         match distance with
-        | Space.Distance.Euclidean | Cosine -> 0.5
+        | Space.Distance.Euclidean | Cosine | Angle -> 0.5
         | Minkowski p -> 1. /. p in
       let normalized_metric = Float.Array.map (fun x -> x ** inv_power) metric
       and rows_per_step = max 1 (elements_per_step / d) and processed_rows = ref 0
