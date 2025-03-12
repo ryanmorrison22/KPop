@@ -1,3 +1,7 @@
+compilers
+lib/libopenblas.a
+lib/libfaiss.a
+lib/libinterfaiss.a
 lib/Info.ml
 _build
 build

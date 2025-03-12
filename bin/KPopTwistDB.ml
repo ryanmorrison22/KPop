@@ -107,10 +107,11 @@ module Parameters =
 
 let info = {
   Tools.Argv.name = "KPopTwistDB";
-  version = "39";
-  date = "10-Mar-2025"
+  version = "40";
+  date = "12-Mar-2025"
 } and authors = [
   "2022-2025", "Paolo Ribeca", "paolo.ribeca@gmail.com"
+  "2024", "Ünsal Öztürk", "uensal.oeztuerk@gmail.com"
 ]
 
 let () =

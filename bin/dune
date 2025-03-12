@@ -1,13 +1,15 @@
 (env
   (dev
-    (ocamlopt_flags (:standard -O3 -ccopt -O3)))
+    (ocamlopt_flags (:standard -O3 -fPIC -ccopt -O3 -ccopt -fPIC -ccopt -fopenmp)))
   (release
-    (ocamlopt_flags (:standard -O3 -ccopt -O3 -ccopt -static))))
+    (ocamlopt_flags (:standard -O3 -fPIC -ccopt -O3 -ccopt -fPIC -ccopt -fopenmp -ccopt -static))))
 
 (executables
  (public_names KPopCount KPopCountDB KPopTwist_ KPopTwistDB)
  (names KPopCount KPopCountDB KPopTwist_ KPopTwistDB)
- (libraries str unix BiOCamLib KPop))
+ (libraries str unix zarith BiOCamLib KPop)
+; (link_flags (-verbose -cclib -lstdc++))
+ (link_flags (-cclib -lstdc++)))
 
 (install
  (section bin)
