@@ -7,11 +7,48 @@ if [[ "$PROFILE" == "" ]]; then
   PROFILE="dev"
 fi
 
-# Always erase build directory to ensure peace of mind
+if [[ "$BLAS_TARGET" == "" ]]; then
+  BLAS_TARGET="HASWELL"
+fi
+
+# Always erase dune _build directory to ensure peace of mind
 rm -rf _build
 
-rm -rf build
-mkdir build
+# ...but we want to keep our build so as not to have to recompile OpenBLAS or faiss every time
+mkdir -p build
+rm -f build/Yggdrasill
+
+rm -f lib/libopenblas.a
+rm -f lib/libfaiss.a
+rm -f lib/libinterfaiss.a
+
+# Build OpenBLAS
+( if [[ -f OpenBLAS/libopenblas.a ]]; then
+    cp OpenBLAS/libopenblas.a lib/
+  else
+    cd OpenBLAS
+    make -j "$(nproc)" CC="$(realpath ../compilers/cc)" FC="$(realpath ../compilers/fortran)" HOSTCC="$(realpath ../compilers/cc)" TARGET="$BLAS_TARGET" CROSS=1
+    cp libopenblas.a ../lib/
+  fi )
+
+# Build faiss
+( if [[ -f build/faiss/faiss/libfaiss.a ]]; then
+    cp build/faiss/faiss/libfaiss.a lib/
+  else
+    cd faiss
+    cmake -D CMAKE_VERBOSE_MAKEFILE=true -D CMAKE_CXX_COMPILER="$(realpath ../compilers/cxx)" -D BLAS_LIBRARIES="$(realpath ../OpenBLAS/libopenblas.a)" -D FAISS_ENABLE_GPU=false -D FAISS_ENABLE_PYTHON=false -D BUILD_TESTING=false -B ../build/faiss .
+    cd ../build/faiss
+    make -j "$(nproc)"
+    cp faiss/libfaiss.a ../../lib/
+  fi )
+
+# Build interfaiss
+( cd lib
+  g++ -I ../faiss/ -O3 -fPIC -fopenmp -c -o libinterfaiss.o interfaiss.cpp
+  ar rcs libinterfaiss.a libinterfaiss.o
+  rm -f libinterfaiss.o )
+
+# Build everything else
 
 # Emit version info for both BiOCamLib and KPop
 cd BiOCamLib && echo -e "include (\n  struct\n    let info = {\n      Tools.Argv.name = \"BiOCamLib\";\n      version = \"$(git log --pretty=format: --name-only | awk '{if ($0!="") print}' | wc -l)\";\n      date = \"$(date -d "@$(git log -1 --format="%at")" +%d-%b-%Y)\"\n    }\n  end\n)" > lib/Info.ml && cd ..

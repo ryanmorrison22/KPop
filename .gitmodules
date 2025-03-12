@@ -1,3 +1,11 @@
 [submodule "BiOCamLib"]
 	path = BiOCamLib
 	url = ../BiOCamLib.git
+[submodule "OpenBLAS"]
+	path = OpenBLAS
+	url = git@github.com:OpenMathLib/OpenBLAS.git
+        ignore = dirty
+[submodule "faiss"]
+	path = faiss
+	url = git@github.com:facebookresearch/faiss.git
+        ignore = dirty
