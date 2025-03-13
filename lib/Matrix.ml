@@ -653,7 +653,7 @@ include (
           !acc /. f_n_cols
         else
           0. in
-      (* We compute standard deviation e MAD *)
+      (* We compute standard deviation and MAD *)
       acc := 0.;
       let ddistr = ref FloatMap.empty in
       Float.Array.iteri

@@ -83,7 +83,7 @@ module Distance:
         (* Internal type used to cluster identical consecutive elements *)
         exception Negative_metric_element of float
         exception Unsorted_metric_vector of Float.Array.t
-        module FV = Numbers.Frequencies.Vector(Numbers.Float)(Numbers.MakeRComparableNumber)
+        module RFreqs = Numbers.RFloatFreqsVector
         let compute = function
           | Flat ->
             (fun m ->
@@ -100,8 +100,8 @@ module Distance:
                  The latter is checked at construction time, so we just assert it.
                  Same for the threshold, which must be between 0. and 1. *)
               assert (power_int >= 0. && threshold >= 0. && threshold <= 1. && power_ext >= 0.);
-              FV.of_floatarray m |> FV.pow_abs power_int |> FV.threshold_accum_abs threshold
-                                 |> FV.pow_abs power_ext |> FV.normalize_abs |> FV.to_floatarray)
+              RFreqs.of_floatarray m |> RFreqs.pow_abs power_int |> RFreqs.threshold_accum_abs threshold
+                                     |> RFreqs.pow_abs power_ext |> RFreqs.normalize_abs |> RFreqs.to_floatarray)
         exception Unknown_metric of string
         exception Negative_power of float
         exception Invalid_threshold of float
