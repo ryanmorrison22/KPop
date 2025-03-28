@@ -629,7 +629,7 @@ include (
           Base.get_distance_rowwise ~normalize ~threads ~elements_per_step ~verbose
             distance metric m1.matrix m2.matrix }
     module FloatIntMultimap = Tools.Multimap (ComparableFloat) (ComparableInt)
-    let summarize_distance_matrix_row req_len row_name row col_names buf =
+    let summarize_distance_matrix_row ?(col_names_mapping = fun idx -> idx) req_len row_name row col_names buf =
       let n_cols = Float.Array.length row in
       let f_n_cols = float_of_int n_cols and distr = ref FloatIntMultimap.empty in
       (* We find the median and filter the result *)
@@ -685,7 +685,8 @@ include (
       FloatIntMultimap.iteri
         (fun i dist col_idx ->
           if i < eff_len then
-            Printf.bprintf buf "\t%s\t%.15g\t%.15g" col_names.(col_idx) dist ((dist -. mean) /. stddev))
+            Printf.bprintf buf "\t%s\t%.15g\t%.15g"
+              col_names.(col_names_mapping(col_idx)) dist ((dist -. mean) /. stddev))
         !distr;
       Printf.bprintf buf "\n"
     let summarize_rowwise
@@ -740,7 +741,7 @@ include (
         (fun (lo_row, hi_row) ->
           Buffer.clear buf;
           for j = lo_row to hi_row do
-            (* For each row number of m2, we compute the respective distances from the rows of m1... *)
+            (* For each row index of m2, we compute the respective distances from the rows of m1... *)
             let distances =
               Float.Array.init r1
                 (fun i ->
@@ -807,6 +808,157 @@ include (
       if verbose then
         Printf.eprintf "%s\r(%s): Writing distance digest to file '%s': done %d/%d rows.\n%!"
           String.TermIO.clear __FUNCTION__ fname n_rows n_rows;
+      close_out output
+    module NeighborsPolicy =
+      struct
+        type t =
+          | Proportional of float (* Factor must be >= 1. *)
+          | Additional of int (* Number must be >= 0 *)
+        let to_string = function
+          | Proportional f -> "times(" ^ string_of_float f ^ ")"
+          | Additional n -> "plus(" ^ string_of_int n ^ ")"
+        exception Unknown_policy of string
+        exception Invalid_multiplier of float
+        exception Invalid_guard_size of int
+        let of_string_re = Str.regexp "[()]"
+        let of_string s =
+          match Str.full_split of_string_re s with
+          | [ Text "times"; Delim "("; Text mult; Delim ")" ] ->
+            let mult =
+              try
+                float_of_string mult
+              with _ ->
+                Unknown_policy s |> raise in
+            if mult < 1. then
+              Invalid_multiplier mult |> raise;
+            Proportional mult
+          | [ Text "plus"; Delim "("; Text add; Delim ")" ] ->
+            let add =
+              try
+                int_of_string add
+              with _ ->
+                Unknown_policy s |> raise in
+            if add < 0 then
+              Invalid_guard_size add |> raise;
+            Additional add
+          | _ ->
+            Unknown_policy s |> raise
+        let get_to_be_visited p n k =
+          match k, p with
+          | None, _ ->
+            n
+          | Some k, Proportional f ->
+            f *. float_of_int k +. 0.5 |> int_of_float |> min n
+          | Some k, Additional i ->
+            min (k + i) n
+      end
+    let summarize_neighbors
+        ?(normalize = true) ?(how_many = Some 2) ?(policy = NeighborsPolicy.Proportional 2.)
+        ?(index_type = Interfaiss.Type.of_string "flat") ?(threads = 1) ?(elements_per_step = 10000) ?(verbose = false)
+        metric db qs prefix =
+      if db.which <> Twisted then
+        Unexpected_type (db.which, Twisted) |> raise;
+      if qs.which <> Twisted then
+        Unexpected_type (qs.which, Twisted) |> raise;
+      if qs.matrix.col_names <> db.matrix.col_names then
+        Base.Incompatible_geometries (qs.matrix.col_names, db.matrix.col_names) |> raise;
+      (* Here distance is by definition euclidean *)
+      let distance = Space.Distance.of_string "euclidean" and d = Array.length qs.matrix.col_names in
+      let n_db = Array.length db.matrix.row_names and n_qs = Array.length qs.matrix.row_names in
+      (* We compute embeddings... *)
+      let embeddings_db = get_embeddings ~normalize ~elements_per_step ~threads ~verbose distance metric db
+      and embeddings_qs = get_embeddings ~normalize ~elements_per_step ~threads ~verbose distance metric qs
+      (* ...and copy them to bigarrays *)
+      and data_db = Bigarray.Array2.create Bigarray.Float32 Bigarray.C_layout n_db d
+      and data_qs = Bigarray.Array2.create Bigarray.Float32 Bigarray.C_layout n_qs d
+      and embeddings_to_bigarray embs data =
+        Array.iteri (fun i -> Float.Array.iteri (fun j x -> data.{i, j} <- x)) embs.matrix.data in
+      embeddings_to_bigarray embeddings_db data_db;
+      embeddings_to_bigarray embeddings_qs data_qs;
+      (* We generate and train the Faiss index *)
+      if verbose then
+        Printf.eprintf "(%s): Generating and training vector index '%s'...%!"
+          __FUNCTION__ (Interfaiss.Type.to_string index_type);
+      let index = Interfaiss.create ~index_type d in
+      Interfaiss.train index data_db;
+      Interfaiss.add index data_db;
+      if verbose then
+        Printf.eprintf " done.\n%!";
+      (* This is a well-behaved number - cannot be more than n_db *)
+      let eff_nn_number = NeighborsPolicy.get_to_be_visited policy n_db how_many in
+      if verbose then
+        Printf.eprintf "(%s): Querying and deleting vector index...%!" __FUNCTION__;
+      let res_idxs, _ = Interfaiss.query index data_qs eff_nn_number in (* We'll recompute distances *)
+      (* We delete the index *)
+      Interfaiss.delete index;
+      if verbose then
+        Printf.eprintf " done.\n%!";
+      (* We compute normalisations *)
+      let norm_db, norm_qs =
+        if normalize then
+          Base.get_normalizations ~threads ~elements_per_step ~verbose distance metric db.matrix,
+          Base.get_normalizations ~threads ~elements_per_step ~verbose distance metric qs.matrix
+        else
+          Float.Array.make n_db 1., Float.Array.make n_qs 1. in
+      (* We compute statistics and output results *)
+      let fname = make_filename_summary prefix in
+      let output = open_out fname
+      and rows_per_step = max 1 (elements_per_step / eff_nn_number) and processed_rows = ref 0
+      and buf = Buffer.create 1048576 in
+      (* Parallel section *)
+      Processes.Parallel.process_stream_chunkwise
+        (fun () ->
+          if !processed_rows < n_qs then
+            let to_do = min rows_per_step (n_qs - !processed_rows) in
+            let new_processed_rows = !processed_rows + to_do in
+            let res = !processed_rows, new_processed_rows - 1 in
+            processed_rows := new_processed_rows;
+            res
+          else
+            raise End_of_file)
+        (fun (lo_row, hi_row) ->
+          Buffer.clear buf;
+          for j = lo_row to hi_row do
+            let idxs = Bigarray.Array2.slice_left res_idxs j in
+            (* For each query, we (re)compute the respective distances from the matches.
+               As many of Faiss indices are not exhaustive, as a first thing
+                we have to compute the actual number of neighbours found *)
+            let eff_dim_idxs =
+              let dim_idxs = Bigarray.Array1.dim idxs and res = ref 0 in
+              begin try
+                for i = 0 to dim_idxs - 1 do
+                  if idxs.{i} = -1L then begin
+                    res := i;
+                    raise_notrace Exit
+                  end
+                done;
+                dim_idxs
+              with Exit ->
+                !res
+              end in
+            let distances =
+              Float.Array.init eff_dim_idxs
+                (fun i ->
+                  let idx = Int64.to_int idxs.{i} in
+                  Space.Distance.compute
+                    ~adaptor_a:(fun a -> a /. norm_db.@(idx)) ~adaptor_b:(fun b -> b /. norm_qs.@(j))
+                    distance metric db.matrix.data.(idx) qs.matrix.data.(j)) in
+            (* ...and summarise them *)
+            summarize_distance_matrix_row ~col_names_mapping:(fun i -> Int64.to_int idxs.{i})
+              eff_nn_number qs.matrix.row_names.(j) distances db.matrix.row_names buf
+          done;
+          hi_row - lo_row + 1, Buffer.contents buf)
+        (fun (n_processed, block) ->
+          Printf.fprintf output "%s" block;
+          let new_processed_rows = !processed_rows + n_processed in
+          if verbose && new_processed_rows / rows_per_step > !processed_rows / rows_per_step then
+            Printf.eprintf "%s\r(%s): Writing distance digest to file '%s': done %d/%d rows%!"
+              String.TermIO.clear __FUNCTION__ fname new_processed_rows n_qs;
+          processed_rows := new_processed_rows)
+        threads;
+      if verbose then
+        Printf.eprintf "%s\r(%s): Writing distance digest to file '%s': done %d/%d rows.\n%!"
+          String.TermIO.clear __FUNCTION__ fname n_qs n_qs;
       close_out output
     (* *)
     let archive_version = "2022-04-03"
@@ -908,6 +1060,27 @@ include (
     (* Summarise distances - input type must be DMatrix *)
     val summarize_distance: ?keep_at_most:int option -> ?threads:int -> ?elements_per_step:int -> ?verbose:bool ->
                             t -> string -> unit
+    (* Policy mandating how many additional neighbours should be visited to compute statistics
+        in addition to the requested ones *)
+    module NeighborsPolicy:
+      sig
+        (* We make the type private to implement constraints *)
+        type t = private
+          | Proportional of float (* Factor must be >= 1. *)
+          | Additional of int (* Number must be >= 0 *)
+        val to_string: t -> string
+        exception Unknown_policy of string
+        exception Invalid_multiplier of float
+        exception Invalid_guard_size of int
+        val of_string: string -> t
+        val get_to_be_visited: t -> int -> int option -> int
+      end
+    (* Find nearest neighbours of each row of a matrix among the rows of another matrix and summarise them
+        while considering more elements according to the specified policy - input types must be Twisted *)
+    val summarize_neighbors: ?normalize:bool -> ?how_many:int option -> ?policy:NeighborsPolicy.t ->
+                             ?index_type:Interfaiss.Type.t -> ?threads:int -> ?elements_per_step:int ->
+                             ?verbose:bool ->
+                             Float.Array.t -> t -> t -> string -> unit
     (* Binary marshalling of the matrix *)
     val to_channel: out_channel -> t -> unit
     exception Incompatible_archive_version of string * string * string

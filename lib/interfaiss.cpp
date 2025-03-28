@@ -57,7 +57,7 @@ void interfaiss_query_index(index_t* idx, int d, idx_t n, const dim_t* queries, 
     faiss::idx_t k_idx = reinterpret_cast<faiss::Index*>(idx->index)->ntotal;
     *k = *k < k_idx ? *k : k_idx;
 
-    float *flat_distances = (float*)malloc(n*(*k)*sizeof(float));
+    dim_t *flat_distances = (dim_t*)malloc(n*(*k)*sizeof(dim_t));
     idx_t *flat_indices   = (idx_t*)malloc(n*(*k)*sizeof(idx_t));
 
     reinterpret_cast<faiss::Index*>(idx->index)->search(n, queries, *k, flat_distances, flat_indices);
@@ -96,7 +96,7 @@ void interfaiss_train_index(index_t* idx, int d, idx_t n, const dim_t* data) {
         case INDEX_FLAT:
         case INDEX_HNSW:
         default:
-            fprintf(stderr,"Training not required or applicable for this index type.\n");
+            //fprintf(stderr,"Training not required or applicable for this index type.\n");
             break;
     }
     return;

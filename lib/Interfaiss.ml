@@ -15,13 +15,50 @@
 
 include (
   struct
-    type index_t =
-      | Flat
-      | PQ of int * int
-      | HNSW of int * int
+    module Type =
+      struct
+        type t =
+          | Flat
+          | PQ of int * int
+          | HNSW of int
+        let to_string = function
+          | Flat -> "flat"
+          | PQ (m, bits) -> Printf.sprintf "pq(%d,%d)" m bits
+          | HNSW m -> "hnsw(" ^ string_of_int m ^ ")"
+        exception Unknown_index of string
+        exception Invalid_PQ_arguments of int * int
+        exception Invalid_HNSW_argument of int
+        let of_string_re = Str.regexp "[(,)]"
+        let of_string s =
+          match Str.full_split of_string_re s with
+          | [ Text "flat" ] ->
+            Flat
+          | [ Text "pq"; Delim "("; Text m; Delim ","; Text bits; Delim ")" ]
+          | [ Text "PQ"; Delim "("; Text m; Delim ","; Text bits; Delim ")" ] ->
+            let m, bits =
+              try
+                int_of_string m, int_of_string bits
+              with _ ->
+                Unknown_index s |> raise in
+            if m < 1 || bits < 1 then
+              Invalid_PQ_arguments (m, bits) |> raise;
+            PQ (m, bits)
+          | [ Text "hnsw"; Delim "("; Text m; Delim ")" ]
+          | [ Text "HNSW"; Delim "("; Text m; Delim ")" ] ->
+              let m =
+              try
+                int_of_string m
+              with _ ->
+                Unknown_index s |> raise in
+            if m < 0 then
+              Invalid_HNSW_argument m |> raise;
+            HNSW m
+          | _ ->
+            Unknown_index s |> raise
+      end
     type t
-    external create: index_t -> int -> t = "InterfaissCreate"
-    let create ?(index_type = Flat) n =
+    external create: Type.t -> int -> t = "InterfaissCreate"
+    let create ?(index_type = Type.Flat) n =
       try
         create index_type n
       with _ ->
@@ -35,12 +72,21 @@ include (
     external query: t -> vectors_t -> int -> offsets_t * distances_t = "InterfaissQuery"
     external delete: t -> unit = "InterfaissDelete"
   end: sig
-    type index_t =
-      | Flat
-      | PQ of int * int
-      | HNSW of int * int
+    module Type:
+      sig
+        type t = private
+          (* We make the type private to implement constraints *)
+          | Flat
+          | PQ of int * int
+          | HNSW of int
+        val to_string: t -> string
+        exception Unknown_index of string
+        exception Invalid_PQ_arguments of int * int
+        exception Invalid_HNSW_argument of int
+        val of_string: string -> t
+      end
     type t
-    val create: ?index_type:index_t -> int -> t
+    val create: ?index_type:Type.t -> int -> t
     type vectors_t = (float, Bigarray.float32_elt, Bigarray.c_layout) Bigarray.Array2.t
     type offsets_t = (int64, Bigarray.int64_elt, Bigarray.c_layout) Bigarray.Array2.t
     type distances_t = (float, Bigarray.float32_elt, Bigarray.c_layout) Bigarray.Array2.t

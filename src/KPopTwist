@@ -116,7 +116,7 @@ cat <<'_____'
   conditional_echo("[13/16] Writing twister")
   data.table::fwrite(twister,paste0(output,".KPopTwister.txt"),row.names=TRUE,quote=TRUE,sep="\t",buffMB=64)
 _____
-) "${TMPDIR}/TABLE.KPopCounter.txt" "${TMPDIR}/NAMES.KPopCounter.txt" "$PREFIX_OUT" "$PREFIX_OUT_KMERS" "$KMERS_KEEP" "$KMERS_SAMPLE" "$NORMALIZE" "$THRESHOLD_KMERS" "$THREADS" "$TEMPORARIES" "$VERBOSE" 2> /dev/null
+) "${TMPDIR}/TABLE.KPopCounter.txt" "${TMPDIR}/NAMES.KPopCounter.txt" "$PREFIX_OUT" "$PREFIX_OUT_KMERS" "$KMERS_KEEP" "$KMERS_SAMPLE" "$NORMALIZE" "$THRESHOLD_KMERS" "$THREADS" "$TEMPORARIES" "$VERBOSE" 2> "${TMPDIR}/LOGGO.txt"
 
 # We convert the results to binary form and remove temporary files
 conditional_echo "$(date +"%c"): [14/16] Encoding twisted..."
@@ -128,7 +128,7 @@ conditional_echo "$(date +"%c"): [15/16] Encoding twister..."
 KPopTwistDB -T "$THREADS" -I T "$PREFIX_OUT" -o T "$PREFIX_OUT" > /dev/null 2>&1
 conditional_echo "$(date +"%c"): [16/16] Cleaning up..."
 if [[ "$TEMPORARIES" == "false" ]]; then
-  rm "${TMPDIR}/TABLE.KPopCounter.txt" "${TMPDIR}/NAMES.KPopCounter.txt"
+  rm "${TMPDIR}/TABLE.KPopCounter.txt" "${TMPDIR}/NAMES.KPopCounter.txt" "${TMPDIR}/LOGGO.txt"
   rmdir "${TMPDIR}"
   rm "${PREFIX_OUT}.KPopTwisted.txt" "${PREFIX_OUT}.KPopInertia.txt" "${PREFIX_OUT}.KPopTwister.txt"
   if [[ "$PREFIX_OUT_KMERS" != "" ]]; then

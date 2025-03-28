@@ -83,6 +83,10 @@ type to_do_t =
   | Set_summary_keep_at_most of KeepAtMost.t
   | Summary_from_twisted_binary of string * string
   | Summary_from_distances of string
+  | Set_neighbors_keep_at_most of KeepAtMost.t
+  | Set_neighbors_guard_policy of Matrix.NeighborsPolicy.t
+  | Set_neighbors_index_type of Interfaiss.Type.t
+  | Summary_from_twisted_neighbors of string * string
 
 module Defaults =
   struct
@@ -95,6 +99,9 @@ module Defaults =
     let splits_algorithm = Matrix.SplitsAlgorithm.of_string "gaps"
     let splits_keep_at_most = 10000
     let summary_keep_at_most = Some 2
+    let neighbors_keep_at_most = Some 6
+    let neighbors_guard_policy = Matrix.NeighborsPolicy.of_string "times(2)"
+    let neighbors_index_type = Interfaiss.Type.of_string "hnsw(32)"
   end
 
 module Parameters =
@@ -107,11 +114,11 @@ module Parameters =
 
 let info = {
   Tools.Argv.name = "KPopTwistDB";
-  version = "40";
-  date = "12-Mar-2025"
+  version = "41";
+  date = "18-Mar-2025"
 } and authors = [
   "2022-2025", "Paolo Ribeca", "paolo.ribeca@gmail.com";
-  "2024", "Ünsal Öztürk", "uensal.oeztuerk@gmail.com"
+  "2024     ", "Ünsal Öztürk", "uensal.oeztuerk@gmail.com"
 ]
 
 let () =
@@ -203,7 +210,7 @@ let () =
         Add_kmers_files_to_twisted
           (TA.get_parameter () |> String.Split.on_char_as_list ',') |> List.accum Parameters.program);
     [ "--distance"; "--distance-function" ],
-      Some "'euclidean'|'cosine'|'angle'|'minkowski(<non_negative_float>)'",
+      Some "'euclidean'|'cosine'|'angle'|'minkowski('<non_negative_float>')'",
       [ "set the function to be used when computing distances.";
         "The parameter for 'minkowski' is the power.";
         "Note that: 'euclidean' is the same as 'minkowski(2)';";
@@ -223,7 +230,7 @@ let () =
       [ "where POWERS_PARAMETERS :=";
         " <non_negative_float>','<fractional_float>','<non_negative_float> :";
         "set the metric function to be used when computing distances.";
-        "Parameters are:";
+        "Parameters for 'powers' are:";
         " internal power; fractional accumulative threshold; external power." ],
       TA.Default (fun () -> Space.Distance.Metric.to_string Defaults.metric),
       (fun _ ->
@@ -255,7 +262,7 @@ let () =
         "register. The result will be placed in the splits register" ],
       TA.Optional,
       (fun _ -> List.accum Parameters.program Splits_from_embeddings);
-    [ "-d"; "--distances"; "--compute-distances"; "--compute-twisted-distances" ],
+    [ "-d"; "--distances"; "--compute-distances" ],
       Some "<twisted_binary_file_prefix>",
       [ "compute distances between all the vectors present in the twisted register";
         "and all the vectors present in the specified twisted binary file";
@@ -292,48 +299,97 @@ let () =
       TA.Default (fun () -> string_of_int Defaults.precision_splits),
       (fun _ -> Set_precision_splits (TA.get_parameter_int_pos ()) |> List.accum Parameters.program);
     [ "-O"; "--Output" ],
-      Some "'T'|'t'|'e'|'d'|'m'|'s' <table_file_prefix>",
+      Some "'T'|'t'|'m'|'e'|'d'|'s' <table_file_prefix>",
       [ "save the database present in the specified register";
-        " ('T'=twister; 't'=twisted; 'e'=embeddings; 'd'=distances; 'm'=metric;";
+        " ('T'=twister; 't'=twisted; 'm'=metric; 'e'=embeddings; 'd'=distances;";
         "  's'=splits)";
         "to the specified tabular file(s).";
         "File extension is automatically assigned depending on database type";
         " (will be: '.KPopTwister.txt' and '.KPopInertia.txt'; '.KPopTwisted.txt';";
-        "  '.KPopVectors.txt'; '.KPopDMatrix.txt'; '.KPopMetrics.txt';";
-        "  or '.PhyloSplits.txt', respectively, unless files is '/dev/*')" ],
+        "  '.KPopMetrics.txt'; '.KPopVectors.txt'; '.KPopDMatrix.txt';";
+        "  or '.PhyloSplits.txt', respectively, unless file is '/dev/*')" ],
       TA.Optional,
       (fun _ ->
         let register_type = TA.get_parameter () |> RegisterType.of_string in
         Register_to_tables (register_type, TA.get_parameter ()) |> List.accum Parameters.program);
-    [ "--summary-at-most"; "--summary-keep-at-most" ],
+    [ "--distances-summarize-at-most"; "--distances-in-summary" ],
       Some "<positive_integer>|'all'",
-      [ "set the maximum number of closest target sequences to be kept";
-        "when summarizing distances. Note that more might be printed anyway";
-        "in case of ties" ],
+      [ "set the maximum number of closest sequences to be printed when summarizing";
+        "distances. Note that more might be printed anyway in case of ties.";
+        "The statistics in the summary will be computed on all sequences" ],
       TA.Default (fun () -> KeepAtMost.to_string Defaults.summary_keep_at_most),
       (fun _ ->
         Set_summary_keep_at_most (TA.get_parameter () |> KeepAtMost.of_string) |> List.accum Parameters.program);
-    [ "-s"; "--compute-and-summarize-distances"; "--compute-and-summarize-twisted-distances" ],
+    [ "-s"; "--summarize-distances"; "--compute-and-summarize-distances" ],
       Some "<twisted_binary_file_prefix> <summary_file_prefix>",
-      [ "compute distances between all the vectors present in the twisted register";
-        "and all the vectors present in the specified twisted binary file";
+      [ "for each vector present in the twisted register, compute distances";
+        "to all vectors present in the specified twisted binary file";
         " (which must have extension '.KPopTwisted' unless file is '/dev/*')";
         "using the metric provided by the twister present in the twister register;";
         "summarize them and write the result to the specified tabular file.";
         "File extension is automatically assigned";
-        " (will be '.KPopSummary.txt' unless files is '/dev/*')" ],
+        " (will be '.KPopSummary.txt' unless file is '/dev/*')" ],
       TA.Optional,
       (fun _ ->
         let twisted_prefix = TA.get_parameter () in
         Summary_from_twisted_binary (twisted_prefix, TA.get_parameter ()) |> List.accum Parameters.program);
-    [ "-S"; "--summarize-distances"; "--summarize-twisted-distances" ],
+    [ "-S"; "--summarize-distance-matrix" ],
       Some "<summary_file_prefix>",
-      [ "summarize the distances present in the distance register";
+      [ "summarize the distance matrix present in the distance register";
         "and write the result to the specified tabular file.";
         "File extension is automatically assigned";
         " (will be '.KPopSummary.txt' unless file is '/dev/*')" ],
       TA.Optional,
       (fun _ -> Summary_from_distances (TA.get_parameter ()) |> List.accum Parameters.program);
+    [ "--neighbors-index-type"; "--neighbors-faiss-index-type" ],
+      Some "'flat'|'pq('PQ_PARAMETERS')'|'hnsw('<positive_integer>')'",
+      [ "where PQ_PARAMETERS :=";
+        " <positive_integer>','<positive_integer>' :";
+        "set the type of Faiss index to be used when computing nearest neighbors.";
+        "Parameters for 'pq' are:";
+        " number of subquantizers; bits per subquantizer.";
+        "Note that the product of the two must be less than or equal to";
+        " the number of dimensions of the twisted vectors.";
+        "The parameter for 'hnsw' is hyperparameter M.";
+        "Note that some indices may not be able to return all the existing neighbors" ],
+      TA.Default (fun () -> Interfaiss.Type.to_string Defaults.neighbors_index_type),
+      (fun _ ->
+        Set_neighbors_index_type (TA.get_parameter () |> Interfaiss.Type.of_string) |> List.accum Parameters.program);
+    [ "--neighbors-summarize-at-most"; "--neighbors-in-summary" ],
+      Some "<positive_integer>|'all'",
+      [ "set the maximum number of closest sequences to be printed when summarizing";
+        "nearest neighbors. Note that more might be printed anyway in case of ties.";
+        "The statistics in the summary will be computed on all the neighbors explored";
+        "according to the policy specified by option --neighbors-guard-policy" ],
+      TA.Default (fun () -> KeepAtMost.to_string Defaults.neighbors_keep_at_most),
+      (fun _ ->
+        Set_neighbors_keep_at_most (TA.get_parameter () |> KeepAtMost.of_string) |> List.accum Parameters.program);
+    [ "--neighbors-guard-policy"; "--neighbors-exploration-policy" ],
+      Some "'times('<float_no_less_than_one>')'|'plus(<non_negative_integer>)'",
+      [ "set the number of nearest neighbors to be explored when summarizing them.";
+        "Note that this is greater than or equal to the number of nearest neighbors";
+        "specified with option --neighbors-summarize-at-most. Calling the latter n,";
+        " policy 'times('m')' will explore m*n nearest neighbors, while";
+        " policy 'plus('m')' will explore m+n nearest neighbors.";
+        "The additional neighbors explored are not printed, but used to compute";
+        "overall statistics" ],
+      TA.Default (fun () -> Matrix.NeighborsPolicy.to_string Defaults.neighbors_guard_policy),
+      (fun _ ->
+        Set_neighbors_guard_policy
+          (TA.get_parameter () |> Matrix.NeighborsPolicy.of_string) |> List.accum Parameters.program);
+    [ "-n"; "--summarize-neighbors"; "--find-and-summarize-neighbors" ],
+      Some "<twisted_binary_file_prefix> <summary_file_prefix>",
+      [ "for each vector present in the twisted register, find nearest neighbors";
+        "among the vectors present in the specified twisted binary file";
+        " (which must have extension '.KPopTwisted' unless file is '/dev/*')";
+        "using the metric provided by the twister present in the twister register";
+        "and euclidean distance; summarize distances and write the result";
+        "to the specified tabular file. File extension is automatically assigned";
+        " (will be '.KPopSummary.txt' unless file is '/dev/*')" ],
+      TA.Optional,
+      (fun _ ->
+        let twisted_prefix = TA.get_parameter () in
+        Summary_from_twisted_neighbors (twisted_prefix, TA.get_parameter ()) |> List.accum Parameters.program);
     TA.make_separator_multiline [ "Miscellaneous options."; "They are set immediately." ];
     [ "-T"; "--threads" ],
       Some "<computing_threads>",
@@ -383,13 +439,15 @@ let () =
           TA.parse_error
             "Option '-k' requires a twister in the twister register!"
       | Register_to_tables (Metrics, _) | Embeddings_from_twisted
-      | Distances_from_twisted_binary _ | Summary_from_twisted_binary _ as w ->
+      | Distances_from_twisted_binary _ | Summary_from_twisted_binary _
+      | Summary_from_twisted_neighbors _ as w ->
         (* A twister must have been loaded to provide the metric induced by inertia *)
         if not !twister_loaded then
           TA.parse_error
-            "Options '-O m', '-e', '-d', and '-s' require a twister in the twister register to provide a metric!";
+            "Options '-O m', '-e', '-d', '-s', and '-n' require a twister in the twister register to provide a metric!";
         begin match w with
-        | Register_to_tables _ -> ()
+        (* When computing nearest neighbours we always use Euclidean distance no matter what *)
+        | Register_to_tables _ | Summary_from_twisted_neighbors _ -> ()
         | Embeddings_from_twisted | Distances_from_twisted_binary _ | Summary_from_twisted_binary _ ->
           begin match !distance, !distance_normalize with
           | Space.Distance.Cosine, false | Angle, false ->
@@ -423,7 +481,8 @@ let () =
       | Register_to_binary (Splits, _)
       | Set_precision_tables _ | Set_precision_splits _
       | Set_splits_algorithm _ | Set_splits_keep_at_most _ | Splits_from_embeddings
-      | Set_summary_keep_at_most _ | Summary_from_distances _ ->
+      | Set_summary_keep_at_most _ | Summary_from_distances _
+      | Set_neighbors_keep_at_most _ | Set_neighbors_guard_policy _ | Set_neighbors_index_type _ ->
         ())
     program;
   (* These are the registers available to the program *)
@@ -434,6 +493,9 @@ let () =
   and splits_keep_at_most = ref Defaults.splits_keep_at_most
   and splits_algorithm = ref Defaults.splits_algorithm and splits = Trees.Splits.create [||] |> ref
   and summary_keep_at_most = ref Defaults.summary_keep_at_most
+  and neighbors_keep_at_most = ref Defaults.neighbors_keep_at_most
+  and neighbors_guard_policy = ref Defaults.neighbors_guard_policy
+  and neighbors_index_type = ref Defaults.neighbors_index_type
   and precision_tables = ref Defaults.precision_tables and precision_splits = ref Defaults.precision_splits in
   let open_and_check f ty prefix =
     let res = f ?verbose:(Some !Parameters.verbose) ty prefix in
@@ -568,14 +630,27 @@ let () =
           summary_keep_at_most := kam
         | Summary_from_twisted_binary (prefix_in, prefix_out) ->
           Matrix.summarize_rowwise
-            ~keep_at_most:!summary_keep_at_most ~normalize:!distance_normalize
+            ~normalize:!distance_normalize ~keep_at_most:!summary_keep_at_most
             ~threads:!Parameters.threads ~verbose:!Parameters.verbose
             !distance (Twister.get_metrics_vector !metric !twister)
-            !twisted (open_binary_and_check Twisted prefix_in) prefix_out
+            (open_binary_and_check Twisted prefix_in) !twisted prefix_out
         | Summary_from_distances prefix ->
           Matrix.summarize_distance
             ~keep_at_most:!summary_keep_at_most ~threads:!Parameters.threads ~verbose:!Parameters.verbose
-            !distances prefix)
+            !distances prefix
+        | Set_neighbors_keep_at_most nhm ->
+          neighbors_keep_at_most := nhm
+        | Set_neighbors_guard_policy gp ->
+          neighbors_guard_policy := gp
+        | Set_neighbors_index_type it ->
+          neighbors_index_type := it
+        | Summary_from_twisted_neighbors (prefix_in, prefix_out) ->
+          Matrix.summarize_neighbors
+            ~normalize:!distance_normalize ~how_many:!neighbors_keep_at_most
+            ~policy:!neighbors_guard_policy ~index_type:!neighbors_index_type
+            ~threads:!Parameters.threads ~verbose:!Parameters.verbose
+            (Twister.get_metrics_vector !metric !twister)
+            (open_binary_and_check Twisted prefix_in) !twisted prefix_out)
       program
   with exc ->
     Printf.peprintf "(%s): %s\n%!" __FUNCTION__
@@ -583,3 +658,4 @@ let () =
     Printf.peprintf "(%s): This should not have happened - please contact <paolo.ribeca@gmail.com>\n%!" __FUNCTION__;
     Printf.peprintf "(%s): You might also wish to rerun me with option -x to get a full backtrace.\n%!" __FUNCTION__;
     Printexc.print_backtrace stderr
+

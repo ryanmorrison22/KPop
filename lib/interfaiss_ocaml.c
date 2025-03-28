@@ -29,16 +29,16 @@ CAMLprim value InterfaissCreate(value o_index_type,value o_n) {
     type index_t =
       | Flat
       | PQ of int * int
-      | HNSW of int * int */
+      | HNSW of int */
   index_t* res;
   if (o_index_type==Val_int(0))
     res=interfaiss_create_flat_index(Int_val(o_n));
   else if (Tag_val(o_index_type)==0)
     res=interfaiss_create_PQ_index(Int_val(o_n),Int_val(Field(o_index_type,0)),Int_val(Field(o_index_type,1)));
   else if (Tag_val(o_index_type)==1)
-    res=interfaiss_create_HNSW_index(Int_val(o_n),Int_val(Field(o_index_type,0)),Int_val(Field(o_index_type,1)));
+    res=interfaiss_create_HNSW_index(Int_val(o_n),Int_val(Field(o_index_type,0)),0);
   else
-    caml_failwith("InterfaissMake");
+    caml_failwith("InterfaissCreate");
   o_res=caml_alloc(1,Abstract_tag);
   *((index_t**)Data_abstract_val(o_res))=res;
   CAMLreturn(o_res);

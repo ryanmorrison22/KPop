@@ -32,14 +32,14 @@ rm -f lib/libinterfaiss.a
   fi )
 
 # Build faiss
-( if [[ -f build/faiss/faiss/libfaiss.a ]]; then
-    cp build/faiss/faiss/libfaiss.a lib/
+( if [[ -f build/faiss/faiss/libfaiss_avx2.a ]]; then
+    cp build/faiss/faiss/libfaiss_avx2.a lib/libfaiss.a
   else
     cd faiss
-    cmake -D CMAKE_VERBOSE_MAKEFILE=true -D CMAKE_CXX_COMPILER="$(realpath ../compilers/cxx)" -D BLAS_LIBRARIES="$(realpath ../OpenBLAS/libopenblas.a)" -D FAISS_ENABLE_GPU=false -D FAISS_ENABLE_PYTHON=false -D BUILD_TESTING=false -B ../build/faiss .
+    cmake -D CMAKE_VERBOSE_MAKEFILE=true -D CMAKE_CXX_COMPILER="$(realpath ../compilers/cxx)" -D BLAS_LIBRARIES="$(realpath ../OpenBLAS/libopenblas.a)" -D FAISS_ENABLE_GPU=false -D FAISS_ENABLE_PYTHON=false -D BUILD_TESTING=false -D CMAKE_BUILD_TYPE=Release -D FAISS_OPT_LEVEL=avx2 -B ../build/faiss .
     cd ../build/faiss
-    make -j "$(nproc)"
-    cp faiss/libfaiss.a ../../lib/
+    make -j "$(nproc)" faiss_avx2
+    cp faiss/libfaiss_avx2.a ../../lib/libfaiss.a
   fi )
 
 # Build interfaiss
