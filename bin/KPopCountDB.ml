@@ -170,7 +170,7 @@ let () =
     [ "--distance-normalize"; "--distance-normalization" ],
       Some "'true'|'false'",
       [ "whether spectra should be normalized prior to computing distances" ],
-      TA.Optional,
+      TA.Default (fun () -> string_of_bool Defaults.distance_normalise),
       (fun _ -> Distance_normalisation_set (TA.get_parameter_boolean ()) |> List.accum Parameters.program);
     [ "--distances"; "--compute-distances"; "--compute-spectral-distances" ],
       Some "REGEXP_SELECTOR REGEXP_SELECTOR <binary_file_prefix>",
