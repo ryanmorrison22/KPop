@@ -13,7 +13,11 @@
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 *)
 
-open BiOCamLib.Better (* We cannot open BiOCamLib here due to the ambiguity with Matrix *)
+(* We cannot open BiOCamLib here due to the ambiguity between BiOCamLib.Matrix and KPop.Matrix *)
+module Numbers = BiOCamLib.Numbers
+module Processes = BiOCamLib.Processes
+module Tools = BiOCamLib.Tools
+open BiOCamLib.Better
 
 (* Twister objects are a combination of KPop matrices.
    We include in order not to have a repeated module prefix *)
@@ -24,50 +28,25 @@ include (
       inertia: Matrix.t
     }
     let empty = { twister = Matrix.empty Twister; inertia = Matrix.empty Inertia }
-    (* *)
-    let to_files ?(precision = 15) ?(threads = 1) ?(elements_per_step = 40000) ?(verbose = false) tr prefix =
-      Matrix.to_file ~precision ~threads ~elements_per_step ~verbose tr.twister prefix;
-      Matrix.to_file ~precision ~threads ~elements_per_step ~verbose tr.inertia prefix
-    exception Mismatched_twister_files of string array * string array * string array
-    let of_files ?(threads = 1) ?(bytes_per_step = 4194304) ?(verbose = false) prefix =
-      let twister = Matrix.of_file ~threads ~bytes_per_step ~verbose Twister prefix
-      and inertia = Matrix.of_file ~threads ~bytes_per_step ~verbose Inertia prefix in
-      (* Let's run at least some checks *)
-      if begin
-        inertia.matrix.row_names <> [| "inertia" |] ||
-        twister.matrix.row_names <> inertia.matrix.col_names
-      end then begin
-        Printf.eprintf "ERROR: twister.row_names:";
-        Array.iter (fun el -> Printf.eprintf "\t\"%s\"" el) twister.matrix.row_names;
-        Printf.eprintf "\nERROR: inertia.col_names:";
-        Array.iter (fun el -> Printf.eprintf "\t\"%s\"" el) inertia.matrix.col_names;
-        Printf.eprintf "\nERROR: inertia.row_names:";
-        Array.iter (fun el -> Printf.eprintf "\t\"%s\"" el) inertia.matrix.row_names;
-        Printf.eprintf "\n%!";
-        Mismatched_twister_files
-            (twister.matrix.row_names, inertia.matrix.col_names, inertia.matrix.row_names)
-          |> raise
-      end;
-      { twister; inertia }
     (* Strictly speaking, we return the _transposed_ of the matrix product here *)
     exception Incompatible_twister_and_twisted
     exception Wrong_number_of_columns of int * int * int
     exception Header_expected of string
     exception Float_expected of string
     exception Duplicate_label of string
-    let add_twisted_from_files
+    let add_twisted_from_file
         ?(normalize = true) ?(threads = 1) ?(elements_per_step = 100) ?(verbose = false) ?(debug = false)
-        twister twisted fnames =
+        twister twisted fname =
       ignore elements_per_step; (* Not used at the moment *)
-      if twisted.Matrix.which <> Twisted then
-        Matrix.Unexpected_type (twisted.Matrix.which, Twisted) |> raise;
+      (* Perform some compatibility checks *)
       let twisted_col_names =
-        if twisted.matrix = Matrix.Base.empty then
+        if twisted.Twisted.twisted.matrix = Matrix.Base.empty then
           twister.twister.matrix.row_names
-        else twisted.matrix.col_names in
+        else
+          twisted.twisted.matrix.col_names in
       if twister.twister.matrix.row_names <> twisted_col_names then
-        raise Incompatible_twister_and_twisted;
-      (* We invert the table *)
+        raise Incompatible_twister_and_twisted; (* Usually there are too many k-mers to print them out *)
+      (* We invert the table for class names *)
       let num_twister_cols = Array.length twister.twister.matrix.col_names in
       let twister_col_names_to_idx = Hashtbl.create num_twister_cols in
       Array.iteri
@@ -78,18 +57,17 @@ include (
       let res = ref StringMap.empty in
       Array.iteri
         (fun i name ->
-          res := StringMap.add name twisted.matrix.data.(i) !res)
-        twisted.matrix.row_names;
-      (* First we read spectra from the files.
+          res := StringMap.add name twisted.twisted.matrix.data.(i) !res)
+        twisted.twisted.matrix.row_names;
+      (* First we read spectra from the file.
          We have to conform the k-mers to the ones in the twister.
          As a bonus, we already know the size of the resulting vector *)
-      let fnames = Array.of_list fnames in
-      let n = Array.length fnames and file_idx = ref 0 and file = open_in fnames.(0) |> ref and line_num = ref 0
+      let file = open_in fname |> ref and line_num = ref 0 and eof_reached = ref false
       and labels = ref ("", "") and num_spectra = ref 0 in
       (* Parallel section *)
       BiOCamLib.Processes.Parallel.process_stream_chunkwise
         (fun () ->
-          if !file_idx = n then
+          if !eof_reached then
             raise End_of_file
           else begin
             let buf = ref [] in
@@ -121,22 +99,13 @@ include (
               close_in !file;
               labels := snd !labels, "";
               incr num_spectra;
-              if verbose then
-                Printf.eprintf "%s\r(%s): [%d/%d] File '%s': Read %d %s on %d %s%s%!"
-                  String.TermIO.clear __FUNCTION__ (!file_idx + 1) n fnames.(!file_idx)
-                  !num_spectra (String.pluralize_int ~plural:"spectra" "spectrum" !num_spectra)
-                  !line_num (String.pluralize_int "line" !line_num) (if !file_idx + 1 = n then ".\n" else "");
-              incr file_idx;
-              if !file_idx < n then begin
-                file := open_in fnames.(!file_idx);
-                line_num := 0
-              end
+              eof_reached := true
             | Exit ->
               ()
             end;
-            if verbose && !file_idx < n then
-              Printf.eprintf "%s\r(%s): [%d/%d] File '%s': Read %d %s on %d %s%!"
-                String.TermIO.clear __FUNCTION__ (!file_idx + 1) n fnames.(!file_idx)
+            if verbose then
+              Printf.eprintf "%s\r(%s): File '%s': Read %d %s on %d %s.%!"
+                String.TermIO.clear __FUNCTION__ fname
                 !num_spectra (String.pluralize_int ~plural:"spectra" "spectrum" !num_spectra)
                 !line_num (String.pluralize_int "line" !line_num);
             (* The lines are passed in reverse order, but that does not really matter much
@@ -202,28 +171,53 @@ include (
           row_names.(i) <- label;
           data.(i) <- row)
         !res;
-      { Matrix.which = Twisted;
-        matrix = { Matrix.Base.col_names = twisted_col_names; row_names; data } }
-    (* *)
-    let get_metrics_vector m t =
-      Space.Distance.Metric.compute m t.inertia.matrix.data.(0)
-    let get_metrics_matrix m t = {
-      Matrix.which = Metrics;
-      matrix = {
-        row_names = [| "metrics" |];
-        col_names = t.inertia.matrix.col_names;
-        data = [| get_metrics_vector m t |]
+      {
+        Twisted.inertia = twister.inertia;
+        twisted = {
+          which = Twisted;
+          matrix = { col_names = twisted_col_names; row_names; data }
+        }
       }
-    }
+    (* *)
+    let to_files ?(precision = 15) ?(threads = 1) ?(elements_per_step = 40000) ?(verbose = false) tr prefix =
+      Matrix.to_file ~precision ~threads ~elements_per_step ~verbose tr.twister prefix;
+      Matrix.to_file ~precision ~threads ~elements_per_step ~verbose tr.inertia prefix
+    exception Mismatched_twister_files of string array * string array * string array
+    let of_files ?(threads = 1) ?(bytes_per_step = 4194304) ?(verbose = false) prefix =
+      let twister = Matrix.of_file ~threads ~bytes_per_step ~verbose Twister prefix
+      and inertia = Matrix.of_file ~threads ~bytes_per_step ~verbose Inertia prefix in
+      (* Let's run at least some checks *)
+      if begin
+        inertia.matrix.row_names <> [| "inertia" |] ||
+        twister.matrix.row_names <> inertia.matrix.col_names
+      end then begin
+        (* Emit additional debugging info *)
+        Printf.eprintf "ERROR: twister.row_names:";
+        Array.iter (fun el -> Printf.eprintf "\t\"%s\"" el) twister.matrix.row_names;
+        Printf.eprintf "\nERROR: inertia.col_names:";
+        Array.iter (fun el -> Printf.eprintf "\t\"%s\"" el) inertia.matrix.col_names;
+        Printf.eprintf "\nERROR: inertia.row_names:";
+        Array.iter (fun el -> Printf.eprintf "\t\"%s\"" el) inertia.matrix.row_names;
+        Printf.eprintf "\n%!";
+        Mismatched_twister_files
+            (twister.matrix.row_names, inertia.matrix.col_names, inertia.matrix.row_names)
+          |> raise
+      end;
+      { twister; inertia }
+    (* *)
+    let archive_version = "2025-10-08"
     (* *)
     let make_filename_binary = function
       | w when String.length w >= 5 && String.sub w 0 5 = "/dev/" -> w
       | prefix -> prefix ^ ".KPopTwister"
+    exception Incompatible_archive_version of string * string
     let to_binary ?(verbose = false) t prefix =
       let fname = make_filename_binary prefix in
       let output = open_out fname in
       if verbose then
-        Printf.eprintf "(%s): Outputting DB to file '%s'...%!" __FUNCTION__ fname;
+        Printf.eprintf "(%s): Outputting twister to file '%s'...%!" __FUNCTION__ fname;
+      output_value output "KPopTwister";
+      output_value output archive_version;
       Matrix.to_channel output t.twister;
       Matrix.to_channel output t.inertia;
       close_out output;
@@ -233,7 +227,11 @@ include (
       let fname = make_filename_binary prefix in
       let input = open_in fname in
       if verbose then
-        Printf.eprintf "(%s): Reading DB from file '%s'...%!" __FUNCTION__ fname;
+        Printf.eprintf "(%s): Reading twister from file '%s'...%!" __FUNCTION__ fname;
+      let which = (input_value input: string) in
+      let version = (input_value input: string) in
+      if which <> "KPopTwister" || version <> archive_version then
+        Incompatible_archive_version (which, version) |> raise;
       let twister = Matrix.of_channel input in
       let inertia = Matrix.of_channel input in
       close_in input;
@@ -246,26 +244,28 @@ include (
       { twister; inertia }
   end: sig
     type t = {
-      twister: Matrix.t; (* Coordinate transformation *)
-      inertia: Matrix.t  (* Variance per coordinate *)
+      (* The matrix describing spectrum-to-coordinates transformation.
+        It has type Twister *)
+      twister: Matrix.t;
+      (* Inertia along each dimension, i.e. the vector of squared singular values.
+        The metrics for principal coordinates will be a normalised version of this.
+        It is a matrix of type Inertia *)
+      inertia: Matrix.t
     }
     val empty: t
-    val to_files: ?precision:int -> ?threads:int -> ?elements_per_step:int -> ?verbose:bool -> t -> string -> unit
-    exception Mismatched_twister_files of string array * string array * string array
-    val of_files: ?threads:int -> ?bytes_per_step:int -> ?verbose:bool -> string -> t
     (* *)
     exception Incompatible_twister_and_twisted
     exception Wrong_number_of_columns of int * int * int
     exception Header_expected of string
     exception Float_expected of string
     exception Duplicate_label of string
-    val add_twisted_from_files:
+    val add_twisted_from_file: (* THIS MUST ALSO TAKE THE METRICS INTO ACCOUNT *)
       ?normalize:bool -> ?threads:int -> ?elements_per_step:int -> ?verbose:bool -> ?debug:bool ->
-      t -> Matrix.t -> string list -> Matrix.t
+      t -> Twisted.t -> string -> Twisted.t
     (* *)
-    val get_metrics_vector: Space.Distance.Metric.t -> t -> Float.Array.t
-    val get_metrics_matrix: Space.Distance.Metric.t -> t -> Matrix.t
-    (* *)
+    val to_files: ?precision:int -> ?threads:int -> ?elements_per_step:int -> ?verbose:bool -> t -> string -> unit
+    exception Mismatched_twister_files of string array * string array * string array
+    val of_files: ?threads:int -> ?bytes_per_step:int -> ?verbose:bool -> string -> t
     val to_binary: ?verbose:bool -> t -> string -> unit
     val of_binary: ?verbose:bool -> string -> t
   end

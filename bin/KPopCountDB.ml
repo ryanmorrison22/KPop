@@ -68,8 +68,8 @@ module Parameters =
 
 let info = {
   Tools.Argv.name = "KPopCountDB";
-  version = "49";
-  date = "23-Feb-2025"
+  version = "50";
+  date = "09-Oct-2025"
 } and authors = [
   "2020-2025", "Paolo Ribeca", "paolo.ribeca@gmail.com"
 ]
@@ -433,10 +433,15 @@ let () =
         | To_distances (regexps_1, regexps_2, prefix) ->
           let selected_1 = KMerDB.selected_from_regexps ~verbose:!Parameters.verbose !current regexps_1
           and selected_2 = KMerDB.selected_from_regexps ~verbose:!Parameters.verbose !current regexps_2 in
-          KMerDB.to_distances ~normalise:!distance_normalise ~threads:!Parameters.threads ~verbose:!Parameters.verbose
+          KMerDB.to_distances
+            ~precision:!filter.precision ~normalise:!distance_normalise
+            ~threads:!Parameters.threads ~verbose:!Parameters.verbose
             !distance !current selected_1 selected_2 prefix)
       program
   with exc ->
+
+(* TODO: WE SHOULD EXCLUDE THE CASE OF BROKEN PIPE *)
+
     Printf.peprintf "(%s): %s\n%!" __FUNCTION__
       ("FATAL: Uncaught exception: " ^ Printexc.to_string exc |> String.TermIO.red);
     Printf.peprintf "(%s): This should not have happened - please contact <paolo.ribeca@gmail.com>\n%!" __FUNCTION__;

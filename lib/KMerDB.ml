@@ -13,13 +13,11 @@
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 *)
 
-open BiOCamLib.Better (* We cannot open BiOCamLib here due to the ambiguity with Matrix *)
-
+(* We cannot open BiOCamLib here due to the ambiguity between BiOCamLib.Matrix and KPop.Matrix *)
 module Numbers = BiOCamLib.Numbers
 module Processes = BiOCamLib.Processes
-
-module FAVector = Numbers.FAVector
-module BAVector = Numbers.BAVector
+module Tools = BiOCamLib.Tools
+open BiOCamLib.Better
 
 (* We put this one here for lack of a better place *)
 module Spectra =
@@ -30,7 +28,7 @@ module Spectra =
   end
 
 (* For counts. We assume each count to be < 2^31 *)
-module I32BAVector = BAVector (
+module I32BAVector = Numbers.BAVector (
   struct
     include Numbers.Int32
     type elt_t = Bigarray.int32_elt
@@ -38,7 +36,7 @@ module I32BAVector = BAVector (
   end
 )
 (* For normalisations and combined spectra. We assume normalisations might be > 2^31 *)
-module FBAVector = BAVector (
+module FBAVector = Numbers.BAVector (
   struct
     include Numbers.Float
     type elt_t = Bigarray.float64_elt
@@ -792,7 +790,7 @@ include (
         Printf.eprintf " ]\n%!"
       end;
       (* We split spectra names according to their class *)
-      let module I2SMM = BiOCamLib.Tools.Multimap (ComparableInt) (ComparableString) in
+      let module I2SMM = Tools.Multimap (ComparableInt) (ComparableString) in
       let split_names = ref I2SMM.empty in
       Array.iteri
         (fun i ind ->
@@ -810,6 +808,7 @@ include (
     (* *)
     module Stats = Numbers.OnlineStats(Numbers.Float) (*(I32BAVector.N)*)
     module Freqs = Numbers.FloatFreqsVector
+    module FAVector = Numbers.FAVector
     module LF_FAVector = Numbers.LinearFit(FAVector)
     exception Invalid_number_of_classes of int
     let distill_kmers ?(threads = 1) ?(elements_per_step = 10000) ?(verbose = false)
@@ -1231,12 +1230,13 @@ include (
       end;
       close_out output
     let to_distances
-        ?(normalise = true) ?(threads = 1) ?(elements_per_step = 100) ?(verbose = false)
+        ?(precision = 15) ?(normalise = true) ?(threads = 1) ?(elements_per_step = 100) ?(verbose = false)
         distance db selection_1 selection_2 prefix =
       let transf = Transformation.of_parameters { which = "power"; threshold = 1.; power = 1. } in
       let stats = stats_table_of_core_db ~threads ~verbose transf db.core
-      and n_r = db.core.n_rows in (* Does not change *)
+      and n_r = db.core.n_rows in (* Number of k-mers. It stays the same even if we select a subset of spectra *)
       let make_submatrix selection =
+        (* We select spectra, i.e. columns *)
         let idxs = ref IntSet.empty in
         Array.iteri
           (fun col_idx col_name ->
@@ -1244,7 +1244,7 @@ include (
               idxs := IntSet.add col_idx !idxs)
           db.core.idx_to_col_names;
         let idxs = IntSet.elements_array !idxs in
-        let n_c = Array.length idxs in
+        let n_c = Array.length idxs in (* We now know the number of columns as well *)
         (* The distance matrix is computed rowwise, and k-mers are physically stored as rows in db:
             we need to transpose *)
         { Matrix.Base.col_names = Array.sub db.core.idx_to_row_names 0 n_r;
@@ -1260,11 +1260,14 @@ include (
                     1.
                   else
                     norm in
+                (*
+                Printf.eprintf "Norm@%d=%g\n%!" idx norm;
+                *)
                 Float.Array.init n_r
                   (fun j -> I32BAVector.N.to_float db.core.storage.(idx).@(j) /. norm)) } in
       let metric = Float.Array.make n_r 1.
       and matrix_1 = make_submatrix selection_1 and matrix_2 = make_submatrix selection_2 in
-      Matrix.to_binary ~verbose {
+      Matrix.to_file ~precision ~threads ~elements_per_step ~verbose {
         which = DMatrix;
         matrix =
           Matrix.Base.get_distance_rowwise ~threads ~elements_per_step ~verbose distance metric matrix_1 matrix_2
@@ -1380,15 +1383,14 @@ include (
         val default: t
       end
     (* Readable output *)
-    val to_table:
-      ?filter:TableFilter.t -> ?threads:int -> ?elements_per_step:int -> ?verbose:bool -> t -> string -> unit
+    val to_table: ?filter:TableFilter.t -> ?threads:int -> ?elements_per_step:int -> ?verbose:bool ->
+                  t -> string -> unit
     (* Spectral output *)
-    val to_spectra:
-      ?filter:TableFilter.t -> ?threads:int -> ?elements_per_step:int -> ?verbose:bool -> t -> string -> unit
+    val to_spectra: ?filter:TableFilter.t -> ?threads:int -> ?elements_per_step:int -> ?verbose:bool ->
+                    t -> string -> unit
     (* Spectral distance matrix *)
-    val to_distances:
-      ?normalise:bool -> ?threads:int -> ?elements_per_step:int -> ?verbose:bool ->
-      Space.Distance.t -> t -> StringSet.t -> StringSet.t -> string -> unit
+    val to_distances: ?precision:int -> ?normalise:bool -> ?threads:int -> ?elements_per_step:int -> ?verbose:bool ->
+                      Space.Distance.t -> t -> StringSet.t -> StringSet.t -> string -> unit
   end
 )
 
