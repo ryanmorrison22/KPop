@@ -23,7 +23,7 @@ fi
 # We parse the parameters returned by KPopTwist_
 OLD_IFS="$IFS"
 IFS=$'\x1'
-read -r PREFIX_IN KMERS_KEEP KMERS_SAMPLE THRESHOLD_COUNTS POWER TRANSFORM NORMALIZE THRESHOLD_KMERS PREFIX_OUT PREFIX_OUT_KMERS THREADS TEMPORARIES VERBOSE <<< "$PARAMETERS"
+read -r PREFIX_IN KMERS_KEEP KMERS_SAMPLE THRESHOLD_COUNTS POWER TRANSFORM THRESHOLD_KMERS PREFIX_OUT PREFIX_OUT_KMERS THREADS TEMPORARIES VERBOSE <<< "$PARAMETERS"
 IFS="$OLD_IFS"
 
 function conditional_echo {
@@ -58,11 +58,10 @@ cat <<'_____'
   if (is.na(args[6])||args[6]=="")
     args[6]<-"1."
   fraction<-as.numeric(args[6])
-  normalize<-as.logical(args[7])
-  threshold<-as.numeric(args[8])
-  threads<-as.integer(args[9]) # Not really used at the moment
-  temporaries<-as.logical(args[10]) # Not really used at the moment
-  verbose<-as.logical(args[11])
+  threshold<-as.numeric(args[7])
+  threads<-as.integer(args[8]) # Not really used at the moment
+  temporaries<-as.logical(args[9]) # Not really used at the moment
+  verbose<-as.logical(args[10])
   #
   conditional_echo<-function(s){
     if (verbose)
@@ -90,8 +89,7 @@ cat <<'_____'
   kmers<-kmers[sampled]
   stuff<-stuff[sampled,]
   conditional_echo("[7/16] Normalizing counts")
-  if (normalize)
-    stuff<-stuff[,lapply(.SD,function(col) col/sum(col))]
+  stuff<-stuff[,lapply(.SD,function(col) col/sum(col))]
   conditional_echo("[8/16] Twisting counts")
   stuff_ca<-ca(stuff)
   conditional_echo("[9/16] Writing twisted")
@@ -103,7 +101,7 @@ cat <<'_____'
   if (output_kmers!="")
     data.table::fwrite(koords,paste0(output_kmers,".KPopTwisted.txt"),row.names=TRUE,quote=TRUE,sep="\t",buffMB=64)
   conditional_echo("[10/16] Writing inertia")
-  inertia<-t(stuff_ca$sv^2/sum(stuff_ca$sv^2))
+  inertia<-t(stuff_ca$sv^2)
   colnames(inertia)<-dnames
   rownames(inertia)<-c("inertia")
   data.table::fwrite(as.data.table(inertia,keep.rownames=TRUE),paste0(output,".KPopInertia.txt"),quote=TRUE,sep="\t",buffMB=64)
@@ -116,7 +114,7 @@ cat <<'_____'
   conditional_echo("[13/16] Writing twister")
   data.table::fwrite(twister,paste0(output,".KPopTwister.txt"),row.names=TRUE,quote=TRUE,sep="\t",buffMB=64)
 _____
-) "${TMPDIR}/TABLE.KPopCounter.txt" "${TMPDIR}/NAMES.KPopCounter.txt" "$PREFIX_OUT" "$PREFIX_OUT_KMERS" "$KMERS_KEEP" "$KMERS_SAMPLE" "$NORMALIZE" "$THRESHOLD_KMERS" "$THREADS" "$TEMPORARIES" "$VERBOSE" 2> "${TMPDIR}/LOGGO.txt"
+) "${TMPDIR}/TABLE.KPopCounter.txt" "${TMPDIR}/NAMES.KPopCounter.txt" "$PREFIX_OUT" "$PREFIX_OUT_KMERS" "$KMERS_KEEP" "$KMERS_SAMPLE" "$THRESHOLD_KMERS" "$THREADS" "$TEMPORARIES" "$VERBOSE" 2> "${TMPDIR}/LOGGO.txt"
 
 # We convert the results to binary form and remove temporary files
 conditional_echo "$(date +"%c"): [14/16] Encoding twisted..."

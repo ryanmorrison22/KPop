@@ -28,7 +28,6 @@ module Parameters =
     let power = ref 1.
     (*let precision = 15*)
     let transformation = ref "power"
-    let normalize = ref true
     let threshold_kmers = ref 0.
     let threads = Processes.Parallel.get_nproc () |> ref
     let temporaries = ref false
@@ -37,8 +36,8 @@ module Parameters =
 
 let info = {
   Tools.Argv.name = "KPopTwist";
-  version = "27";
-  date = "23-Feb-2025"
+  version = "28";
+  date = "10-Oct-2025"
 } and authors = [
   "2022-2025", "Paolo Ribeca", "paolo.ribeca@gmail.com"
 ]
@@ -81,11 +80,6 @@ let () =
       [ "transformation to apply to table elements" ],
       TA.Default (fun () -> !Parameters.transformation),
       (fun _ -> Parameters.transformation := TA.get_parameter ());
-    [ "--counts-normalize"; "--counts-normalization" ],
-      Some "'true'|'false'",
-      [ "whether to normalize spectra after transformation and before twisting" ],
-      TA.Default (fun () -> string_of_bool !Parameters.normalize),
-      (fun _ -> Parameters.normalize := TA.get_parameter_boolean ());
     [ "--kmers-threshold" ],
       Some "<non_negative_integer>",
       [ "compute the sum of all transformed (and possibly normalized) counts";
@@ -156,9 +150,8 @@ let () =
   (*
      For the time being, we just repeat input parameters
   *)
-  Printf.printf "%s\001%s\001%.12g\001%.12g\001%.12g\001%s\001%b\001%.12g\001%s\001%s\001%d\001%b\001%b\n%!"
+  Printf.printf "%s\001%s\001%.12g\001%.12g\001%.12g\001%s\001%.12g\001%s\001%s\001%d\001%b\001%b\n%!"
     !Parameters.input !Parameters.kmers_keep !Parameters.kmers_sample
-    !Parameters.threshold_counts !Parameters.power !Parameters.transformation
-    !Parameters.normalize !Parameters.threshold_kmers
+    !Parameters.threshold_counts !Parameters.power !Parameters.transformation !Parameters.threshold_kmers
     !Parameters.output !Parameters.output_kmers !Parameters.threads !Parameters.temporaries !Parameters.verbose
 
