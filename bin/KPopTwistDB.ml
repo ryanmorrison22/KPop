@@ -181,7 +181,11 @@ let () =
         " <non_negative_float>','<fractional_float>','<non_negative_float> :";
         "set the metric function to be used when computing distances.";
         "Parameters for 'powers' are:";
-        " internal power; fractional accumulative threshold; external power." ],
+        " internal power; fractional accumulative threshold; external power.";
+        "Note that 'flat' disregards inertia, i.e. it is the same as";
+        " standard coordinates,";
+        "while 'power(1,1,1)' leaves inertia unchanged, i.e. it is the same as";
+        " principal coordinates" ],
       TA.Default (fun () -> Space.Distance.Metric.to_string Defaults.metric),
       (fun _ ->
         Set_metric (TA.get_parameter () |> Space.Distance.Metric.of_string) |> List.accum Parameters.program);
@@ -272,8 +276,9 @@ let () =
         Register_to_tables (register_type, TA.get_parameter ()) |> List.accum Parameters.program);
     [ "--distances-summarize-at-most"; "--distances-in-summary" ],
       Some "<positive_integer>|'all'",
-      [ "set the maximum number of closest sequences to be printed when summarizing";
-        "distances. Note that more might be printed anyway in case of ties.";
+      [ "set the maximum number of closest sequences to be printed";
+        "when summarizing distances.";
+        "Note that more might be printed anyway in case of ties.";
         "The statistics in the summary will be computed on all sequences" ],
       TA.Default (fun () -> KeepAtMost.to_string Defaults.summary_keep_at_most),
       (fun _ ->
@@ -293,10 +298,11 @@ let () =
         Summary_from_twisted_binary (twisted_prefix, TA.get_parameter (), false) |> List.accum Parameters.program);
     [ "-D"; "--summarize-and-output-distances"; "--compute-summarize-and-output-distances" ],
       Some "<twisted_binary_file_prefix> <summary_file_prefix>",
-      [ "same as option '-d' above, but additionally output the distance matrix";
+      [ "same as option '-d', but additionally output the distance matrix";
         "in tabular form.";
         "File extensions are automatically assigned";
-        " (will be '.KPopSummary.txt' and '.KPopDMatrix.txt', unless file is '/dev/*')" ],
+        " (will be '.KPopSummary.txt' and '.KPopDMatrix.txt',";
+        "  unless file is '/dev/*')" ],
       TA.Optional,
       (fun _ ->
         let twisted_prefix = TA.get_parameter () in
@@ -305,34 +311,40 @@ let () =
       Some "'flat'|'pq('PQ_PARAMETERS')'|'hnsw('<positive_integer>')'",
       [ "where PQ_PARAMETERS :=";
         " <positive_integer>','<positive_integer>' :";
-        "set the type of Faiss index to be used when computing nearest neighbors.";
+        "set the type of Faiss index used to compute nearest neighbors.";
         "Parameters for 'pq' are:";
         " number of subquantizers; bits per subquantizer.";
         "Note that the product of the two must be less than or equal to";
-        " the number of dimensions of the twisted vectors.";
-        "The parameter for 'hnsw' is hyperparameter M.";
-        "Note that some indices may not be able to return all the existing neighbors" ],
+        "the number of dimensions of the twisted vectors.";
+        "The parameter for 'hnsw' is";
+        " hyperparameter M.";
+        "Note that some indices may not be able to return all the existing";
+        "nearest neighbors" ],
       TA.Default (fun () -> Interfaiss.Type.to_string Defaults.neighbors_index_type),
       (fun _ ->
         Set_neighbors_index_type (TA.get_parameter () |> Interfaiss.Type.of_string) |> List.accum Parameters.program);
     [ "--neighbors-summarize-at-most"; "--neighbors-in-summary" ],
       Some "<positive_integer>|'all'",
-      [ "set the maximum number of closest sequences to be printed when summarizing";
-        "nearest neighbors. Note that more might be printed anyway in case of ties.";
-        "The statistics in the summary will be computed on all the neighbors explored";
-        "according to the policy specified by option --neighbors-guard-policy" ],
+      [ "set the maximum number of closest sequences to be printed";
+        "when summarizing nearest neighbors.";
+        "Note that more might be printed anyway in case of ties.";
+        "The statistics in the summary will be computed on all the neighbors";
+        "explored according to the policy specified by option";
+        "'--neighbors-guard-policy'" ],
       TA.Default (fun () -> KeepAtMost.to_string Defaults.neighbors_keep_at_most),
       (fun _ ->
         Set_neighbors_keep_at_most (TA.get_parameter () |> KeepAtMost.of_string) |> List.accum Parameters.program);
     [ "--neighbors-guard-policy"; "--neighbors-exploration-policy" ],
       Some "'times('<float_no_less_than_one>')'|'plus(<non_negative_integer>)'",
-      [ "set the number of nearest neighbors to be explored when summarizing them.";
-        "Note that this is greater than or equal to the number of nearest neighbors";
-        "specified with option --neighbors-summarize-at-most. Calling the latter n,";
+      [ "set the number of nearest neighbors to be explored";
+        "when summarizing them.";
+        "Note that this is greater than or equal to the number of neighbors";
+        "specified with option '--neighbors-summarize-at-most'.";
+        "Calling the latter n,";
         " policy 'times('m')' will explore m*n nearest neighbors, while";
         " policy 'plus('m')' will explore m+n nearest neighbors.";
-        "The additional neighbors explored are not printed, but used to compute";
-        "overall statistics" ],
+        "The additional neighbors explored are not printed,";
+        "but used to compute overall statistics" ],
       TA.Default (fun () -> Twisted.NeighborsPolicy.to_string Defaults.neighbors_guard_policy),
       (fun _ ->
         Set_neighbors_guard_policy
