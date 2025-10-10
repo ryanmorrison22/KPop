@@ -87,21 +87,32 @@ module Distance:
         let compute = function
           | Flat ->
             (fun m ->
+              (* The flat metric leaves distances unchanged *)
               let l = Float.Array.length m in
               if l = 0 then
                 m
               else
-                (1. /. float_of_int l) |> Float.Array.make l)
+                Float.Array.make l 1.)
           | Powers (power_int, threshold, power_ext) ->
             (fun m ->
-              (* We assume that the elements of the metric are non-negative.
+              (* We assume that the elements of the metric are not necessarily normalised
+                  but always non-negative, as inertia (which is the square of SVs) would be.
                  In order to guarantee that the order of elements does not change after transformation,
-                  elements must also be sorted (in decreasing order), and powers non-negative.
+                  elements must also be sorted (in decreasing order, as SVs would be),
+                  and powers non-negative.
                  The latter is checked at construction time, so we just assert it.
-                 Same for the threshold, which must be between 0. and 1. *)
+                 Same for the threshold, which must be between 0. and 1. .
+                 Note that under these assumptions the "neutral" transformation
+                  leaving the flat metric invariant is "powers(1,1,1)".
+                 Finally, we multiply the result by the number of dimensions,
+                  for consistency with the case of flat metric *)
               assert (power_int >= 0. && threshold >= 0. && threshold <= 1. && power_ext >= 0.);
-              RFreqs.of_floatarray m |> RFreqs.pow_abs power_int |> RFreqs.threshold_accum_abs threshold
-                                     |> RFreqs.pow_abs power_ext |> RFreqs.normalize_abs |> RFreqs.to_floatarray)
+              let l = Float.Array.length m |> float_of_int in
+              RFreqs.(of_floatarray m |> normalize_abs |> pow_abs power_int
+                                      |> threshold_accum_abs threshold
+                                      |> pow_abs power_ext |> normalize_abs
+                                      |> to_floatarray)
+                |> Float.Array.map (( *. ) l))
         exception Unknown_metric of string
         exception Negative_power of float
         exception Invalid_threshold of float

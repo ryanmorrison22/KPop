@@ -86,7 +86,7 @@ module Defaults =
   struct
     let distance = Space.Distance.of_string "euclidean"
     let distance_normalize = true
-    let metric = Space.Distance.Metric.of_string "powers(1,1,2)"
+    let metric = Space.Distance.Metric.of_string "powers(1,1,1)"
     let precision_tables = 15
     let precision_splits = 10
     let splits_algorithm = Twisted.SplitsAlgorithm.of_string "gaps"
