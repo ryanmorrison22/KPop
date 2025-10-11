@@ -47,6 +47,11 @@ include (
     let to_embeddings ?(normalize = true) ?(threads = 1) ?(elements_per_step = 10000) ?(verbose = false)
         distance metric t =
       let metrics = get_inertias t |> Space.Distance.Metric.compute metric in
+      if verbose then begin
+        Printf.eprintf "(%s): Metrics=(" __FUNCTION__;
+        Float.Array.iter (Printf.eprintf " %.6g") metrics;
+        Printf.eprintf " )\n%!"
+      end;
       { Matrix.which = Twisted;
         matrix =
           Matrix.Base.get_embeddings ~normalize ~threads ~elements_per_step ~verbose
@@ -645,18 +650,18 @@ include (
       (* Let's run at least some checks *)
       if begin
         inertia.matrix.row_names <> [| "inertia" |] ||
-        twisted.matrix.row_names <> inertia.matrix.col_names
+        inertia.matrix.col_names <> twisted.matrix.col_names
       end then begin
         (* Emit additional debugging info *)
         Printf.eprintf "ERROR: inertia.row_names:";
-        Array.iter (fun el -> Printf.eprintf "\t\"%s\"" el) inertia.matrix.row_names;
+        Array.iter (Printf.eprintf "\t\"%s\"") inertia.matrix.row_names;
         Printf.eprintf "\nERROR: inertia.col_names:";
-        Array.iter (fun el -> Printf.eprintf "\t\"%s\"" el) inertia.matrix.col_names;
-        Printf.eprintf "\nERROR: twisted.row_names:";
-        Array.iter (fun el -> Printf.eprintf "\t\"%s\"" el) twisted.matrix.row_names;
+        Array.iter (Printf.eprintf "\t\"%s\"") inertia.matrix.col_names;
+        Printf.eprintf "\nERROR: twisted.col_names:";
+        Array.iter (Printf.eprintf "\t\"%s\"") twisted.matrix.col_names;
         Printf.eprintf "\n%!";
         Mismatched_vector_files (
-          inertia.matrix.row_names, inertia.matrix.col_names, twisted.matrix.row_names
+          inertia.matrix.row_names, inertia.matrix.col_names, twisted.matrix.col_names
         ) |> raise
       end;
       { inertia; twisted }

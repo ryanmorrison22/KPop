@@ -189,19 +189,19 @@ include (
       (* Let's run at least some checks *)
       if begin
         inertia.matrix.row_names <> [| "inertia" |] ||
-        twister.matrix.row_names <> inertia.matrix.col_names
+        inertia.matrix.col_names <> twister.matrix.row_names
       end then begin
         (* Emit additional debugging info *)
-        Printf.eprintf "ERROR: twister.row_names:";
-        Array.iter (fun el -> Printf.eprintf "\t\"%s\"" el) twister.matrix.row_names;
+        Printf.eprintf "ERROR: inertia.row_names:";
+        Array.iter (Printf.eprintf "\t\"%s\"") inertia.matrix.row_names;
         Printf.eprintf "\nERROR: inertia.col_names:";
-        Array.iter (fun el -> Printf.eprintf "\t\"%s\"" el) inertia.matrix.col_names;
-        Printf.eprintf "\nERROR: inertia.row_names:";
-        Array.iter (fun el -> Printf.eprintf "\t\"%s\"" el) inertia.matrix.row_names;
+        Array.iter (Printf.eprintf "\t\"%s\"") inertia.matrix.col_names;
+        Printf.eprintf "\nERROR: twister.row_names:";
+        Array.iter (Printf.eprintf "\t\"%s\"") twister.matrix.row_names;
         Printf.eprintf "\n%!";
-        Mismatched_twister_files
-            (twister.matrix.row_names, inertia.matrix.col_names, inertia.matrix.row_names)
-          |> raise
+        Mismatched_twister_files (
+          inertia.matrix.row_names, inertia.matrix.col_names, twister.matrix.row_names
+        ) |> raise
       end;
       { twister; inertia }
     (* *)

@@ -120,12 +120,12 @@ let () =
     [ "--keep-temporaries" ],
       None,
       [ "keep temporary files rather than deleting them in the end" ],
-      TA.Default (fun () -> string_of_bool !Parameters.temporaries),
+      TA.Default (fun () -> "do not keep"),
       (fun _ -> Parameters.temporaries := true);
     [ "-v"; "--verbose" ],
       None,
       [ "set verbose execution" ],
-      TA.Default (fun () -> string_of_bool !Parameters.verbose),
+      TA.Default (fun () -> "quiet execution"),
       (fun _ -> Parameters.verbose := true);
     [ "-V"; "--version" ],
       None,

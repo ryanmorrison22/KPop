@@ -85,7 +85,7 @@ type to_do_t =
 module Defaults =
   struct
     let distance = Space.Distance.of_string "euclidean"
-    let distance_normalize = true
+    let distance_normalize = false
     let metric = Space.Distance.Metric.of_string "powers(1,1,1)"
     let precision_tables = 15
     let precision_splits = 10
@@ -107,8 +107,8 @@ module Parameters =
 
 let info = {
   Tools.Argv.name = "KPopTwistDB";
-  version = "42";
-  date = "09-Oct-2025"
+  version = "43";
+  date = "10-Oct-2025"
 } and authors = [
   "2022-2025", "Paolo Ribeca", "paolo.ribeca@gmail.com";
   "2024     ", "Ünsal Öztürk", "uensal.oeztuerk@gmail.com"
@@ -372,7 +372,7 @@ let () =
     [ "-v"; "--verbose" ],
       None,
       [ "set verbose execution" ],
-      TA.Default (fun () -> string_of_bool !Parameters.verbose),
+      TA.Default (fun () -> "quiet execution"),
       (fun _ -> Parameters.verbose := true);
     [ "-V"; "--version" ],
       None,

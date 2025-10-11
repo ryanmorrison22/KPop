@@ -123,8 +123,9 @@ module Distance:
             Flat
           | s ->
             match Str.full_split of_string_re s with
-            | [ Text "powers";
-                Delim "("; Text power_int; Delim ","; Text threshold; Delim ","; Text power_ext; Delim ")" ] ->
+            | [ Text "powers"; Delim "(";
+                Text power_int; Delim ","; Text threshold; Delim ","; Text power_ext;
+                Delim ")" ] ->
               (* Powers must be non-negative, and the threshold between 0. and 1. *)
               let power_int, threshold, power_ext =
                 try

@@ -118,12 +118,12 @@ _____
 
 # We convert the results to binary form and remove temporary files
 conditional_echo "$(date +"%c"): [14/16] Encoding twisted..."
-KPopTwistDB -T "$THREADS" -I t "$PREFIX_OUT" -o t "$PREFIX_OUT" > /dev/null 2>&1
+KPopTwistDB -T "$THREADS" -I t "$PREFIX_OUT" -o t "$PREFIX_OUT" > "${TMPDIR}/LOGGO.txt" 2>&1
 if [[ "$PREFIX_OUT_KMERS" != "" ]]; then
-  KPopTwistDB -T "$THREADS" -I t "$PREFIX_OUT_KMERS" -o t "$PREFIX_OUT_KMERS" > /dev/null 2>&1
+  KPopTwistDB -T "$THREADS" -I t "$PREFIX_OUT_KMERS" -o t "$PREFIX_OUT_KMERS" > "${TMPDIR}/LOGGO.txt" 2>&1
 fi
 conditional_echo "$(date +"%c"): [15/16] Encoding twister..."
-KPopTwistDB -T "$THREADS" -I T "$PREFIX_OUT" -o T "$PREFIX_OUT" > /dev/null 2>&1
+KPopTwistDB -T "$THREADS" -I T "$PREFIX_OUT" -o T "$PREFIX_OUT" > "${TMPDIR}/LOGGO.txt" 2>&1
 conditional_echo "$(date +"%c"): [16/16] Cleaning up..."
 if [[ "$TEMPORARIES" == "false" ]]; then
   rm "${TMPDIR}/TABLE.KPopCounter.txt" "${TMPDIR}/NAMES.KPopCounter.txt" "${TMPDIR}/LOGGO.txt"

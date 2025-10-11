@@ -327,7 +327,7 @@ let () =
     [ "-v"; "--verbose" ],
       None,
       [ "set verbose execution" ],
-      TA.Default (fun () -> string_of_bool !Parameters.verbose),
+      TA.Default (fun () -> "quiet execution"),
       (fun _ -> Parameters.verbose := true);
     [ "-V"; "--version" ],
       None,
