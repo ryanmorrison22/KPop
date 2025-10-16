@@ -193,9 +193,10 @@ let () =
       Some "'euclidean'|'cosine'|'angle'|'minkowski('<non_negative_float>')'",
       [ "set the function to be used when computing distances.";
         "The parameter for 'minkowski' is the power.";
-        "Note that: 'euclidean' is the same as 'minkowski(2)';";
-        "'cosine' is the same as ('euclidean'^2)/2, or 1 - cos theta;";
-        "'angle' is the same as arccos(1 - ('euclidean'^2)/2), or theta,";
+        "Note that:";
+        " 'euclidean' is the same as 'minkowski(2)';";
+        " 'cosine' is the same as ('euclidean'^2)/2, or 1 - cos theta;";
+        " 'angle' is the same as arccos(1 - ('euclidean'^2)/2), or theta,";
         "where theta is the relative angle between the two embeddings" ],
       TA.Default (fun () -> Space.Distance.to_string Defaults.distance),
       (fun _ -> Set_distance (TA.get_parameter () |> Space.Distance.of_string) |> List.accum Parameters.program);
