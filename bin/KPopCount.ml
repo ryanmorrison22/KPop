@@ -71,8 +71,8 @@ module Parameters =
 
 let info = {
   Tools.Argv.name = "KPopCount";
-  version = "19";
-  date = "14-Oct-2025"
+  version = "20";
+  date = "19-Oct-2025"
 } and authors = [
   "2017-2025", "Paolo Ribeca", "paolo.ribeca@gmail.com"
 ]
@@ -272,12 +272,19 @@ let () =
             CoverageFromName.extract !Parameters.weight_field read_tag in
         k_mer_iterator ~weight read.seq;
         if !Parameters.verbose && !reads_cntr mod 1_000 = 0 then
-          Printf.eprintf "%s\r(%s): Added and hashed %d reads%!" String.TermIO.clear __FUNCTION__ !reads_cntr;
+          Printf.eprintf "%s\r(%s): Added and hashed %d %s%!" String.TermIO.clear __FUNCTION__
+            !reads_cntr (String.pluralize_int "read" !reads_cntr);
         if segm_id = 0 then
           incr reads_cntr)
       !store;
     if !Parameters.verbose then
-      Printf.eprintf "%s\r(%s): Added and hashed %d reads.\n%!" String.TermIO.clear __FUNCTION__ !reads_cntr;
+      Printf.eprintf "%s\r(%s): Added and hashed %d %s.\n%!" String.TermIO.clear __FUNCTION__
+        !reads_cntr (String.pluralize_int "read" !reads_cntr);
+    (*Printf.eprintf "Times: (encode=%g, trie=%g, stackarray=%g, accumulate=%g)\n%!"
+      (Tools.Timer.read "KMers.Iterator.Encoder:encode")
+      (Tools.Timer.read "KMers.Iterator.Encoder:trie")
+      (Tools.Timer.read "KMers.Iterator.Encoder:stackarray")
+      (Tools.Timer.read "KMers.Iterator.Encoder:accumulate");*)
     close_out output
   end
 

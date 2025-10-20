@@ -28,21 +28,9 @@ module Spectra =
   end
 
 (* For counts. We assume each count to be < 2^31 *)
-module I32BAVector = Numbers.BAVector (
-  struct
-    include Numbers.Int32
-    type elt_t = Bigarray.int32_elt
-    let elt = Bigarray.Int32
-  end
-)
+module I32BAVector = Numbers.I32BAVector
 (* For normalisations and combined spectra. We assume normalisations might be > 2^31 *)
-module FBAVector = Numbers.BAVector (
-  struct
-    include Numbers.Float
-    type elt_t = Bigarray.float64_elt
-    let elt = Bigarray.Float64
-  end
-)
+module FBAVector = Numbers.FBAVector
 
 include (
   struct
