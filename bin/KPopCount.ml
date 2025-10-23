@@ -49,17 +49,17 @@ module KMerIterator =
         include KMers.Iterator.Hasher
         (* We overwrite the stock library function to better suit this program *)
         let to_string = function
-        | K_mers k -> Printf.sprintf "-k %d" k
-        | Gapped (k, g) -> Printf.sprintf "-g %d %d" k g
+        | K_mers k -> Printf.sprintf "continuous k-mers of size %d" k
+        | Gapped (k, g) -> Printf.sprintf "gapped k-mers of size %d (%d+%d+%d)" (2*k+g) k g k
       end
   end
+module KMI = KMerIterator
 
 module Parameters =
   struct
     let option_l_or_L = ref false
-    let content = ref KMerIterator.Content.DNA_ds
-    let encoder = ref KMerIterator.Encoder.DNA
-    let hasher = KMerIterator.Hasher.K_mers 12 |> ref
+    let content = KMI.Content.of_string "ds-DNA" |> ref
+    let hasher = KMI.Hasher.K_mers 12 |> ref
     let weight_field = ref 0
     let max_results_size = ref 16777216 (* Or: 4^12 *)
     let inputs = ref []
@@ -71,8 +71,8 @@ module Parameters =
 
 let info = {
   Tools.Argv.name = "KPopCount";
-  version = "20";
-  date = "19-Oct-2025"
+  version = "21";
+  date = "23-Oct-2025"
 } and authors = [
   "2017-2025", "Paolo Ribeca", "paolo.ribeca@gmail.com"
 ]
@@ -86,29 +86,38 @@ let () =
     [ "-k"; "--k-mer-size"; "--k-mer-length" ],
       Some "<positive_integer>",
       [ "set the hashing strategy to iteration over regular k-mers";
-        "and specify the k-mer length to be used" ],
-      TA.Default (fun () -> KMerIterator.Hasher.to_string !Parameters.hasher),
-      (fun _ -> Parameters.hasher := KMerIterator.Hasher.K_mers (TA.get_parameter_int_pos ()));
+        "and specify the k-mer length to be used.";
+        "Options '-k' and '-g' are mutually exclusive; if multiple are specified";
+        "the last one will take effect" ],
+      TA.Default
+        (fun () ->
+          match !Parameters.hasher with
+          | K_mers _ -> KMI.Hasher.to_string !Parameters.hasher
+          | Gapped _ -> "not used"),
+      (fun _ -> Parameters.hasher := KMI.Hasher.K_mers (TA.get_parameter_int_pos ()));
     [ "-g"; "--gapped-k-mer-sizes"; "--gapped-k-mer-lengths" ],
-      Some "<positive_integer> <positive_integer>",
-      [ "set the hashing strategy to iteration over gapped k-mers";
-        "(having a block-gap-block structure) and specify their geometry";
-        "in terms of block and gap sizes, respectively" ],
-      TA.Default (fun () -> KMerIterator.Hasher.to_string !Parameters.hasher),
+      Some "BLOCK_SIZE GAP_SIZE",
+      [ "where";
+        " BLOCK-SIZE := <positive_integer>";
+        " GAP-SIZE := <positive_integer>";
+        "Set the hashing strategy to iteration over symmetrical gapped k-mers";
+        "(having a BLOCK-GAP-BLOCK structure, with BLOCKs of the same size) and";
+        "specify their geometry in terms of BLOCK and GAP sizes, respectively.";
+        "For instance, option";
+        " '-g 5 1'";
+        "will iterate on all existing k-mers of size 11 (5+1+5) and not take the";
+        "central nucleotide into account for the purpose of computing the hash.";
+        "Options '-k' and '-g' are mutually exclusive; if multiple are specified";
+        "the last one will take effect" ],
+      TA.Default
+          (fun () ->
+            match !Parameters.hasher with
+            | K_mers _ -> "not_used"
+            | Gapped _ -> KMI.Hasher.to_string !Parameters.hasher),
       (fun _ ->
         let k = TA.get_parameter_int_pos () in
         let g = TA.get_parameter_int_pos () in
-        Parameters.hasher := KMerIterator.Hasher.Gapped (k, g));
-    [ "-e"; "--encoding"; "--encoding-strategy" ],
-      Some "'DNA'|'protein'|'dict:'<dictionary_file_name>",
-      [ "set the encoding strategy, i.e. the way input sequences are decomposed";
-        "into a sequence of characters or dictionary entries/tokens.";
-        "'DNA' and 'protein' encode sequences as consecutive characters specifying";
-        "bases or amino acids, respectively.";
-        "If a dictionary file is specified, each of its lines is interpreted";
-        "as a different dictionary entry/token" ],
-      TA.Default (fun () -> KMerIterator.Encoder.to_string !Parameters.encoder),
-      (fun _ -> Parameters.encoder := TA.get_parameter () |> KMerIterator.Encoder.of_string);
+        Parameters.hasher := KMI.Hasher.Gapped (k, g));
     [ "--max-results-size" ],
       Some "<positive_integer>",
       [ "maximum number of k-mer hashes to be kept in memory at any given time.";
@@ -119,14 +128,34 @@ let () =
       (fun _ -> Parameters.max_results_size := TA.get_parameter_int_pos ());
     TA.make_separator "Input/Output";
     [ "-c"; "--content" ],
-      Some "'DNA-ss'|'DNA-single-stranded'|'DNA-ds'|'DNA-double-stranded'|'protein'|'text'",
+      Some "'ss-DNA'|'single-stranded-DNA'|'ds-DNA'|'double-stranded-DNA'|'protein'|FULL",
       [ "how file contents should be interpreted.";
-        "When content is 'DNA-ss', 'protein', or 'text', only the sequence is hashed;";
-        "when content is 'DNA-ds', both sequence and reverse complement are hashed.";
-        "'DNA-ss' prevents automatic matching of reverse-complemented sequences;";
-        "use it only when comparing a set of single, homogeneus sequences" ],
-      TA.Default (fun _ -> KMerIterator.Content.to_string !Parameters.content),
-      (fun _ -> Parameters.content := TA.get_parameter () |> KMerIterator.Content.of_string);
+        "When content is 'ss-DNA', 'protein' or 'text', only the sequence is hashed;";
+        "when content is 'ds-DNA', both sequence and reverse complement are hashed.";
+        "'ss-DNA' prevents automatic matching of reverse-complemented sequences;";
+        "use it only when comparing a set of single, homogeneus sequences.";
+        "These are shortcuts for the full form of this option, which is defined as";
+        " FULL := 'DNA('STRANDEDNESS','CASE_SENSITIVITY','UNKNOWN_CHAR_ACTION')'";
+        "       | 'protein('UNKNOWN_CHAR_ACTION')'";
+        "       | 'text('CASE_SENSITIVITY','UNKNOWN_CHAR_ACTION',";
+        "               '<dictionary_file_name>')'";
+        "where";
+        " STRANDEDNESS := 'ss'|'single-stranded'|'ds'|'double-stranded'";
+        " CASE_SENSITIVITY := 'ci'|'case-insensitive'|'cs'|'case-sensitive'";
+        " UNKNOWN_CHAR_ACTION := 'split'|'ignore'|'error'";
+        "If 'case-insensitive' is specified, DNA/protein sequences are converted to";
+        "uppercase characters, while text sequences (and dictionary entries)";
+        "are converted to lowercase characters.";
+        "UNKNOWN_CHAR_ACTION decides what happens when an unknown character is found";
+        "in the input. Option 'split' (the default for DNA/protein sequences) splits";
+        "the input sequence and skips unknown characters (for instance N/X) whenever";
+        "they are encountered; option 'ignore' (the default for text) silently skips";
+        "unknown characters (for instance whitespace); option 'error' causes the";
+        "program to abort.";
+        "If a dictionary file is specified, each of its lines is interpreted";
+        "as a different dictionary entry/token" ],
+      TA.Default (fun _ -> KMI.Content.to_string !Parameters.content),
+      (fun _ -> Parameters.content := TA.get_parameter () |> KMI.Content.of_string);
     [ "-f"; "--fasta" ],
       Some "<fasta_file_name>",
       [ "FASTA input file containing sequences.";
@@ -255,8 +284,8 @@ let () =
       Printf.fprintf output "\t%s\n" !Parameters.label;
     let reads_cntr = ref 0
     and k_mer_iterator =
-      KMerIterator.make ~max_results_size:!Parameters.max_results_size ~verbose:!Parameters.verbose
-        !Parameters.content !Parameters.encoder !Parameters.hasher (Printf.fprintf output "%s\t%d\n") in
+      KMI.make ~max_results_size:!Parameters.max_results_size ~verbose:!Parameters.verbose
+        !Parameters.content !Parameters.hasher (Printf.fprintf output "%s\t%d\n") in
     (* Note that linting is done automatically at a lower level by KMerIterator
         depending on the sequence type, so we disable it here *)
     Files.ReadsIterate.iter ~linter:Sequences.Lint.none ~verbose:false
@@ -280,10 +309,10 @@ let () =
     if !Parameters.verbose then
       Printf.eprintf "%s\r(%s): Added and hashed %d %s.\n%!" String.TermIO.clear __FUNCTION__
         !reads_cntr (String.pluralize_int "read" !reads_cntr);
-    (*Printf.eprintf "Times: (encode=%g, trie=%g, stackarray=%g, accumulate=%g)\n%!"
+    (*Printf.eprintf "Times: (encode=%g, trie=%g, array=%g, accumulate=%g)\n%!"
       (Tools.Timer.read "KMers.Iterator.Encoder:encode")
       (Tools.Timer.read "KMers.Iterator.Encoder:trie")
-      (Tools.Timer.read "KMers.Iterator.Encoder:stackarray")
+      (Tools.Timer.read "KMers.Iterator.Encoder:array")
       (Tools.Timer.read "KMers.Iterator.Encoder:accumulate");*)
     close_out output
   end
