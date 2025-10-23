@@ -36,8 +36,8 @@ module Parameters =
 
 let info = {
   Tools.Argv.name = "KPopTwist";
-  version = "28";
-  date = "10-Oct-2025"
+  version = "29";
+  date = "20-Oct-2025"
 } and authors = [
   "2022-2025", "Paolo Ribeca", "paolo.ribeca@gmail.com"
 ]
@@ -61,7 +61,7 @@ let () =
       TA.Default (fun () -> string_of_float !Parameters.kmers_sample),
       (fun _ -> Parameters.kmers_sample := TA.get_parameter_float_fraction ());
     [ "--counts-threshold" ],
-      Some "<non_negative_float>",
+      Some "<non-negative_float>",
       [ "set to zero all counts that are less than this threshold";
         "before transforming them.";
         "A fractional threshold between 0. and 1. is taken as a relative one";
@@ -69,7 +69,7 @@ let () =
       TA.Default (fun () -> string_of_float !Parameters.threshold_counts),
       (fun _ -> Parameters.threshold_counts := TA.get_parameter_float_non_neg ());
     [ "--counts-power" ],
-      Some "<non_negative_float>",
+      Some "<non-negative_float>",
       [ "raise counts to this power before transforming them.";
         "A power of 0 when the 'pseudocounts' method is used";
         "performs a logarithmic transformation" ],
@@ -81,7 +81,7 @@ let () =
       TA.Default (fun () -> !Parameters.transformation),
       (fun _ -> Parameters.transformation := TA.get_parameter ());
     [ "--kmers-threshold" ],
-      Some "<non_negative_integer>",
+      Some "<non-negative_integer>",
       [ "compute the sum of all transformed (and possibly normalized) counts";
         "for each k-mer, and eliminate k-mers such that the corresponding sum";
         "is less than the largest sum rescaled by this threshold.";

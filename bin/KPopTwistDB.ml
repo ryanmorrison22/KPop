@@ -107,8 +107,8 @@ module Parameters =
 
 let info = {
   Tools.Argv.name = "KPopTwistDB";
-  version = "43";
-  date = "10-Oct-2025"
+  version = "44";
+  date = "20-Oct-2025"
 } and authors = [
   "2022-2025", "Paolo Ribeca", "paolo.ribeca@gmail.com";
   "2024     ", "Ünsal Öztürk", "uensal.oeztuerk@gmail.com"
@@ -142,7 +142,7 @@ let () =
         | Twister | Twisted as register_type ->
           Binary_to_register (register_type, TA.get_parameter ()) |> List.accum Parameters.program);
     [ "-I"; "--Input" ],
-      Some "'T'|'t' <table_file_prefix>",
+      Some "'T'|'t' <tabular_file_prefix>",
       [ "load the specified tabular database(s) into the specified register";
         " ('T'=twister; 't'=twisted).";
         "File extension is automatically determined depending on database type";
@@ -162,14 +162,14 @@ let () =
       TA.Optional,
       (fun _ -> Add_binary_to_twisted (TA.get_parameter ()) |> List.accum Parameters.program);
     [ "-A"; "--Add"; "--add-tabular"; "--add-tabular-to-twisted" ],
-      Some "<table_file_prefix>",
+      Some "<tabular_file_prefix>",
       [ "add the contents of the specified tabular database to the twisted register.";
         "File extension is automatically determined";
         " (will be '.KPopTwisted.txt', unless file is '/dev/*')" ],
       TA.Optional,
       (fun _ -> Add_tables_to_twisted (TA.get_parameter ()) |> List.accum Parameters.program);
     [ "-k"; "--kmers"; "-s"; "--spectra"; "--add-kmers"; "--add-spectra" ],
-      Some "<spectra_table_file_name>",
+      Some "<spectra_tabular_file_name>",
       [ "twist the k-mers from the specified file according to the transformation";
         "present in the twister register, and add the results to the database";
         "loaded in the twisted register" ],
@@ -178,19 +178,27 @@ let () =
     [ "-m"; "--metric"; "--metric-function" ],
       Some "'flat'|'powers('POWERS_PARAMETERS')'",
       [ "where POWERS_PARAMETERS :=";
-        " <non_negative_float>','<fractional_float>','<non_negative_float> :";
-        "set the metric function to be used when computing distances.";
+        " <non-negative_float>','<fractional_float>','<non-negative_float>";
+        "Set the metric function to be used when computing distances.";
         "Parameters for 'powers' are:";
-        " internal power; fractional accumulative threshold; external power.";
-        "Note that 'flat' disregards inertia, i.e. it is the same as";
-        " standard coordinates,";
-        "while 'power(1,1,1)' leaves inertia unchanged, i.e. it is the same as";
-        " principal coordinates" ],
+        " internal_power; fractional_accumulative_threshold; external_power.";
+        "The 'power' transformation is computed as follows:";
+        " (1) the inertia vector is raised to internal_power and normalized;";
+        " (2) elements are summed in order until fractional_accumulative_threshold";
+        "      (a number between 0. and 1.) is reached, while the elements";
+        "      above the threshold are set to zero";
+        " (3) the resulting vector is raised to external_power and normalized.";
+        "Note that";
+        " 'flat'";
+        "(which is equivalent to 'power(0,1,1)' or 'power(1,1,0)')";
+        "disregards inertia, i.e. it is the same as standard coordinates, while";
+        " 'power(1,1,1)'";
+        "leaves inertia unchanged, i.e. it is the same as principal coordinates" ],
       TA.Default (fun () -> Space.Distance.Metric.to_string Defaults.metric),
       (fun _ ->
         Set_metric (TA.get_parameter () |> Space.Distance.Metric.of_string) |> List.accum Parameters.program);
     [ "--distance"; "--distance-function" ],
-      Some "'euclidean'|'cosine'|'angle'|'minkowski('<non_negative_float>')'",
+      Some "'euclidean'|'cosine'|'angle'|'minkowski('<non-negative_float>')'",
       [ "set the function to be used when computing distances.";
         "The parameter for 'minkowski' is the power.";
         "Note that:";
@@ -207,36 +215,14 @@ let () =
       TA.Default (fun () -> string_of_bool Defaults.distance_normalize),
       (fun _ -> Set_distance_normalize (TA.get_parameter_boolean ()) |> List.accum Parameters.program);
     [ "-e"; "--embeddings"; "--compute-embeddings"; "--twisted-to-embeddings" ],
-      Some "<table_file_prefix>",
+      Some "<tabular_file_prefix>",
       [ "compute embeddings from the vectors present in the twisted register";
-        "using the current metric and distance functions and normalization.";
+        "using the current metric function, distance function and normalization.";
         "The result will be written to the specified tabular file.";
         "File extension is automatically assigned";
         " (will be '.KPopVectors' unless file is '/dev/*')" ],
       TA.Optional,
       (fun _ -> Embeddings_from_twisted (TA.get_parameter ()) |> List.accum Parameters.program);
-    [ "--splits-algorithm" ],
-      Some "'gaps'|'centroids'",
-      [ "algorithm to use when computing splits from embeddings" ],
-      TA.Default (fun () -> Twisted.SplitsAlgorithm.to_string Defaults.splits_algorithm),
-      (fun _ ->
-        Set_splits_algorithm (TA.get_parameter () |> Twisted.SplitsAlgorithm.of_string)
-        |> List.accum Parameters.program);
-    [ "--splits-at-most"; "--splits-keep-at-most" ],
-      Some "<positive_integer>|'all'",
-      [ "set the maximum number of phylogenetic splits to be kept";
-        "when generating them from embeddings" ],
-      TA.Default (fun () -> string_of_int Defaults.splits_keep_at_most),
-      (fun _ -> Set_splits_keep_at_most (TA.get_parameter_int_pos ()) |> List.accum Parameters.program);
-    [ "-S"; "--splits"; "--compute-splits"; "--twisted-to-splits" ],
-      Some "<table_file_prefix>",
-      [ "compute phylogenetic splits from the vectors present in the twisted register";
-        "using the current metric and distance functions and normalization.";
-        "The result will be written to the specified tabular file.";
-        "File extension is automatically assigned";
-        " (will be '.PhyloSplits' unless file is '/dev/*')" ],
-      TA.Optional,
-      (fun _ -> Splits_from_twisted (TA.get_parameter ()) |> List.accum Parameters.program);
     [ "-o"; "--output" ],
       Some "'T'|'t' <binary_file_prefix>",
       [ "save the database present in the specified register";
@@ -256,14 +242,8 @@ let () =
         "in tabular formats" ],
       TA.Default (fun () -> string_of_int Defaults.precision_tables),
       (fun _ -> Set_precision_tables (TA.get_parameter_int_pos ()) |> List.accum Parameters.program);
-    [ "--precision-for-splits" ],
-      Some "<positive_integer>",
-      [ "set how many precision digits should be used when outputting splits";
-        "in plain-text format" ],
-      TA.Default (fun () -> string_of_int Defaults.precision_splits),
-      (fun _ -> Set_precision_splits (TA.get_parameter_int_pos ()) |> List.accum Parameters.program);
     [ "-O"; "--Output" ],
-      Some "'T'|'t' <table_file_prefix>",
+      Some "'T'|'t' <tabular_file_prefix>",
       [ "save the database present in the specified register";
         " ('T'=twister; 't'=twisted)";
         "to the specified tabular files.";
@@ -289,7 +269,7 @@ let () =
       [ "for each vector present in the twisted register, compute distances";
         "to all vectors present in the specified twisted binary file";
         " (which must have extension '.KPopTwisted' unless file is '/dev/*')";
-        "using the current metric and distance functions and normalization;";
+        "using the current metric function, distance function and normalization;";
         "summarize them and write the result to the specified tabular file.";
         "File extension is automatically assigned";
         " (will be '.KPopSummary.txt' unless file is '/dev/*')" ],
@@ -336,14 +316,16 @@ let () =
       (fun _ ->
         Set_neighbors_keep_at_most (TA.get_parameter () |> KeepAtMost.of_string) |> List.accum Parameters.program);
     [ "--neighbors-guard-policy"; "--neighbors-exploration-policy" ],
-      Some "'times('<float_no_less_than_one>')'|'plus(<non_negative_integer>)'",
+      Some "'times('<float_no_less_than_one>')'|'plus(<non-negative_integer>)'",
       [ "set the number of nearest neighbors to be explored";
         "when summarizing them.";
         "Note that this is greater than or equal to the number of neighbors";
         "specified with option '--neighbors-summarize-at-most'.";
         "Calling the latter n,";
-        " policy 'times('m')' will explore m*n nearest neighbors, while";
-        " policy 'plus('m')' will explore m+n nearest neighbors.";
+        " policy 'times('m')'";
+        "will explore m*n nearest neighbors, while";
+        " policy 'plus('m')'";
+        "will explore m+n nearest neighbors.";
         "The additional neighbors explored are not printed,";
         "but used to compute overall statistics" ],
       TA.Default (fun () -> Twisted.NeighborsPolicy.to_string Defaults.neighbors_guard_policy),
@@ -355,7 +337,7 @@ let () =
       [ "for each vector present in the twisted register, find nearest neighbors";
         "among the vectors present in the specified twisted binary file";
         " (which must have extension '.KPopTwisted' unless file is '/dev/*')";
-        "using the current metric and distance functions and normalization;";
+        "using the current metric function, distance function and normalization;";
         "summarize distances and write the result to the specified tabular file.";
         "File extension is automatically assigned";
         " (will be '.KPopSummary.txt' unless file is '/dev/*')" ],
@@ -363,6 +345,36 @@ let () =
       (fun _ ->
         let twisted_prefix = TA.get_parameter () in
         Summary_from_twisted_neighbors (twisted_prefix, TA.get_parameter ()) |> List.accum Parameters.program);
+    TA.make_separator_multiline [ ""; "Experimental actions."; "They might be removed from future versions." ];
+    [ "--precision-for-splits" ],
+      Some "<positive_integer>",
+      [ "set how many precision digits should be used when outputting splits";
+        "in plain-text format" ],
+      TA.Default (fun () -> string_of_int Defaults.precision_splits),
+      (fun _ -> Set_precision_splits (TA.get_parameter_int_pos ()) |> List.accum Parameters.program);
+    [ "--splits-algorithm" ],
+      Some "'gaps'|'centroids'",
+      [ "algorithm to use when computing splits from embeddings" ],
+      TA.Default (fun () -> Twisted.SplitsAlgorithm.to_string Defaults.splits_algorithm),
+      (fun _ ->
+        Set_splits_algorithm (TA.get_parameter () |> Twisted.SplitsAlgorithm.of_string)
+        |> List.accum Parameters.program);
+    [ "--splits-at-most"; "--splits-keep-at-most" ],
+      Some "<positive_integer>|'all'",
+      [ "set the maximum number of phylogenetic splits to be kept";
+        "when generating them from embeddings" ],
+      TA.Default (fun () -> string_of_int Defaults.splits_keep_at_most),
+      (fun _ -> Set_splits_keep_at_most (TA.get_parameter_int_pos ()) |> List.accum Parameters.program);
+    [ "-S"; "--splits"; "--compute-splits"; "--twisted-to-splits" ],
+      Some "<phylosplits_tabular_file_prefix>",
+      [ "compute phylogenetic splits";
+        "from the vectors present in the twisted register";
+        "using the current metric function, distance function and normalization.";
+        "The result will be written to the specified tabular file.";
+        "File extension is automatically assigned";
+        " (will be '.PhyloSplits' unless file is '/dev/*')" ],
+      TA.Optional,
+      (fun _ -> Splits_from_twisted (TA.get_parameter ()) |> List.accum Parameters.program);
     TA.make_separator_multiline [ "Miscellaneous options."; "They are set immediately." ];
     [ "-T"; "--threads" ],
       Some "<computing_threads>",
