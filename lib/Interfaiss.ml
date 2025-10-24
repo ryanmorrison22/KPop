@@ -25,11 +25,9 @@ include (
           | Flat -> "flat"
           | PQ (m, bits) -> Printf.sprintf "pq(%d,%d)" m bits
           | HNSW m -> "hnsw(" ^ string_of_int m ^ ")"
-        exception Unknown_index of string
-        exception Invalid_PQ_arguments of int * int
-        exception Invalid_HNSW_argument of int
         let of_string_re = Str.regexp "[(,)]"
         let of_string s =
+          let fail kind = Printf.sprintf "(%s): %s index '%s'" __FUNCTION__ kind s |> failwith in
           match Str.full_split of_string_re s with
           | [ Text "flat" ] ->
             Flat
@@ -39,22 +37,22 @@ include (
               try
                 int_of_string m, int_of_string bits
               with _ ->
-                Unknown_index s |> raise in
+                fail "Unknown" in
             if m < 1 || bits < 1 then
-              Invalid_PQ_arguments (m, bits) |> raise;
+              fail "Invalid";
             PQ (m, bits)
           | [ Text "hnsw"; Delim "("; Text m; Delim ")" ]
           | [ Text "HNSW"; Delim "("; Text m; Delim ")" ] ->
-              let m =
+            let m =
               try
                 int_of_string m
               with _ ->
-                Unknown_index s |> raise in
+                fail "Unknown" in
             if m < 0 then
-              Invalid_HNSW_argument m |> raise;
+              fail "Invalid";
             HNSW m
           | _ ->
-            Unknown_index s |> raise
+            fail "Unknown"
       end
     type t
     external create: Type.t -> int -> t = "InterfaissCreate"
@@ -80,9 +78,6 @@ include (
           | PQ of int * int
           | HNSW of int
         val to_string: t -> string
-        exception Unknown_index of string
-        exception Invalid_PQ_arguments of int * int
-        exception Invalid_HNSW_argument of int
         val of_string: string -> t
       end
     type t

@@ -229,32 +229,30 @@ include (
         let to_string = function
           | Proportional f -> "times(" ^ string_of_float f ^ ")"
           | Additional n -> "plus(" ^ string_of_int n ^ ")"
-        exception Unknown_policy of string
-        exception Invalid_multiplier of float
-        exception Invalid_guard_size of int
         let of_string_re = Str.regexp "[()]"
         let of_string s =
+          let fail kind = Printf.sprintf "(%s): %s policy '%s'" __FUNCTION__ kind s |> failwith in
           match Str.full_split of_string_re s with
           | [ Text "times"; Delim "("; Text mult; Delim ")" ] ->
             let mult =
               try
                 float_of_string mult
               with _ ->
-                Unknown_policy s |> raise in
+                fail "Invalid" in
             if mult < 1. then
-              Invalid_multiplier mult |> raise;
+              fail "Invalid";
             Proportional mult
           | [ Text "plus"; Delim "("; Text add; Delim ")" ] ->
             let add =
               try
                 int_of_string add
               with _ ->
-                Unknown_policy s |> raise in
+                fail "Unknown" in
             if add < 0 then
-              Invalid_guard_size add |> raise;
+              fail "Invalid";
             Additional add
           | _ ->
-            Unknown_policy s |> raise
+            fail "Unknown"
         let get_to_be_visited p n k =
           match k, p with
           | None, _ ->
@@ -380,14 +378,14 @@ include (
         type t =
           | Gaps
           | Centroids
-        let to_string = function
-          | Gaps -> "gaps"
-          | Centroids -> "centroids"
-        exception Unknown_algorithm of string
         let of_string = function
           | "gaps" -> Gaps
           | "centroids" -> Centroids
-          | w -> Unknown_algorithm w |> raise
+          | s ->
+            Printf.sprintf "(%s): Unknown algorithm '%s'" __FUNCTION__ s |> failwith
+        let to_string = function
+          | Gaps -> "gaps"
+          | Centroids -> "centroids"
         (* Implementation module *)
         module Bipartition =
           struct
@@ -732,9 +730,6 @@ include (
           | Proportional of float (* Factor must be >= 1. *)
           | Additional of int (* Number must be >= 0 *)
         val to_string: t -> string
-        exception Unknown_policy of string
-        exception Invalid_multiplier of float
-        exception Invalid_guard_size of int
         val of_string: string -> t
         val get_to_be_visited: t -> int -> int option -> int
       end
@@ -751,7 +746,6 @@ include (
           | Gaps
           | Centroids
         val to_string: t -> string
-        exception Unknown_algorithm of string
         val of_string: string -> t
       end
     (* Output splits for the vectors computed with the specified distance and metric functions *)

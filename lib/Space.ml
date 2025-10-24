@@ -29,12 +29,9 @@ module Distance:
           (* Parameters are: internal power, threshold (on accumulated transformed inertia), external power.
             Powers must be >= 0., threshold between 0. and 1. *)
           | Powers of float * float * float
-      exception Negative_metric_element of float
+        exception Negative_metric_element of float
         exception Unsorted_metric_vector of Float.Array.t
         val compute: t -> Float.Array.t -> Float.Array.t
-        exception Unknown_metric of string
-        exception Negative_power of float
-        exception Invalid_threshold of float
         val of_string: string -> t
         val to_string: t -> string
       end
@@ -57,8 +54,6 @@ module Distance:
         which allow, for instance, to implement normalised differences *)
     val compute: ?adaptor_a:(float -> float) -> ?adaptor_b:(float -> float) ->
                  t -> Float.Array.t -> Float.Array.t -> Float.Array.t -> float
-    exception Unknown_distance of string
-    exception Negative_power of float
     val of_string: string -> t
     val to_string: t -> string
     module Iterator:
@@ -113,34 +108,26 @@ module Distance:
                                       |> pow_abs power_ext |> normalize_abs
                                       |> to_floatarray)
                 |> Float.Array.map (( *. ) l))
-        exception Unknown_metric of string
-        exception Negative_power of float
-        exception Invalid_threshold of float
         let of_string_re = Str.regexp "[(,)]"
-        let of_string name =
-          match name with
-          | "flat" ->
+        let of_string s =
+          let fail kind = Printf.sprintf "(%s): %s metric '%s'" __FUNCTION__ kind s |> failwith in
+          match Str.full_split of_string_re s with
+          | [ Text "flat" ] ->
             Flat
-          | s ->
-            match Str.full_split of_string_re s with
-            | [ Text "powers"; Delim "(";
-                Text power_int; Delim ","; Text threshold; Delim ","; Text power_ext;
-                Delim ")" ] ->
-              (* Powers must be non-negative, and the threshold between 0. and 1. *)
-              let power_int, threshold, power_ext =
-                try
-                  float_of_string power_int, float_of_string threshold, float_of_string power_ext
-                with _ ->
-                  Unknown_metric s |> raise in
-              if power_int < 0. then
-                Negative_power power_int |> raise;
-              if threshold < 0. || threshold > 1. then
-                Invalid_threshold threshold |> raise;
-              if power_ext < 0. then
-                Negative_power power_ext |> raise;
-              Powers (power_int, threshold, power_ext)
-            | _ ->
-              Unknown_metric s |> raise
+          | [ Text "powers"; Delim "(";
+              Text power_int; Delim ","; Text threshold; Delim ","; Text power_ext;
+              Delim ")" ] ->
+            (* Powers must be non-negative, and the threshold between 0. and 1. *)
+            let power_int, threshold, power_ext =
+              try
+                float_of_string power_int, float_of_string threshold, float_of_string power_ext
+              with _ ->
+                fail "Invalid" in
+            if power_int < 0. || (threshold < 0. || threshold > 1.) || power_ext < 0. then
+              fail "Invalid";
+            Powers (power_int, threshold, power_ext)
+          | _ ->
+            fail "Unknown"
         let to_string = function
           | Flat ->
             "flat"
@@ -211,29 +198,27 @@ module Distance:
           | Angle -> acos (1. -. !acc /. 2.)
           | _ -> assert false
           end
-    exception Unknown_distance of string
-    exception Negative_power of float
     let of_string_re = Str.regexp "[()]"
-    let of_string = function
-      | "euclidean" ->
+    let of_string s =
+      let fail kind = Printf.sprintf "(%s): %s distance '%s'" __FUNCTION__ kind s |> failwith in
+      match Str.full_split of_string_re s with
+      | [ Text "euclidean" ] ->
         Euclidean
-      | "cosine" ->
+      | [ Text "cosine" ] ->
         Cosine
-      | "angle" ->
+      | [ Text "angle" ] ->
         Angle
-      | s ->
-        match Str.full_split of_string_re s with
-        | [ Text "minkowski"; Delim "("; Text power; Delim ")" ] ->
+      | [ Text "minkowski"; Delim "("; Text power; Delim ")" ] ->
           let power =
             try
               float_of_string power
             with _ ->
-              Unknown_distance s |> raise in
+              fail "Invalid" in
           if power < 0. then
-            Negative_power power |> raise;
+            fail "Invalid";
           Minkowski power
         | _ ->
-          Unknown_distance s |> raise
+          fail "Unknown"
     let to_string = function
       | Euclidean -> "euclidean"
       | Cosine -> "cosine"

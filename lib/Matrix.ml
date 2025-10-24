@@ -286,7 +286,6 @@ include (
           | Twisted -> "KPopTwisted"
           | Vectors -> "KPopVectors"
           | DMatrix -> "KPopDMatrix"
-        exception Unknown_type of string
         let of_string = function
           | "KPopDistill" -> Distill
           | "KPopTwister" -> Twister
@@ -294,7 +293,8 @@ include (
           | "KPopTwisted" -> Twisted
           | "KPopVectors" -> Vectors
           | "KPopDMatrix" -> DMatrix
-          | w -> Unknown_type w |> raise
+          | s ->
+            Printf.sprintf "(%s): Unknown type '%s'" __FUNCTION__ s |> failwith
       end
     type t = {
       which: Type.t;
@@ -354,7 +354,6 @@ include (
           | Vectors (* Only used internally *)
           | DMatrix (* Only used internally *)
         val to_string: t -> string
-        exception Unknown_type of string
         val of_string: string -> t
       end
     type t = {
