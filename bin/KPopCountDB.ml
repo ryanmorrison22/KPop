@@ -26,6 +26,7 @@ type to_do_t =
   | Split_spectra of string
   | Add_combined_selected of string (* The new label *)
   | Remove_selected
+  | Transform of KMerDB.Transformation.t
   | Distill_kmers of string * string
   | Summary
   | Selected_from_labels of StringSet.t
@@ -39,9 +40,6 @@ type to_do_t =
   | Table_output_col_names of bool
   | Table_output_metadata of bool
   | Table_transpose of bool
-  | Table_transform_threshold of float
-  | Table_transform_power of float
-  | Table_transform_which of string
   | Table_output_zero_rows of bool
   | Table_precision of int
   | To_table of string
@@ -54,6 +52,7 @@ and regexps_t = (string * Str.regexp) list
 module Defaults =
   struct
     let combination_criterion = KMerDB.CombinationCriterion.of_string "mean"
+    let transformation = KMerDB.Transformation.of_string "power(1)"
     let filter = KMerDB.TableFilter.default
     let distance = Space.Distance.of_string "euclidean"
     let distance_normalise = true
@@ -68,8 +67,8 @@ module Parameters =
 
 let info = {
   Tools.Argv.name = "KPopCountDB";
-  version = "50";
-  date = "09-Oct-2025"
+  version = "51";
+  date = "20-Oct-2025"
 } and authors = [
   "2020-2025", "Paolo Ribeca", "paolo.ribeca@gmail.com"
 ]
@@ -133,12 +132,33 @@ let () =
           |> List.accum Parameters.program);
     [ "-c"; "--combine"; "--combine-by-class"; "--combine-spectra-by-class" ],
       Some "<classes_metadata_field_name>",
-      [ "split the table into classes according to the labels contained in the";
+      [ "split the database into classes according to the labels contained in the";
         "specified metadata field and combine the spectra belonging to each class";
         "into a separate vector named as the class label. Delete original spectra.";
         "Class labels and spectra names must be different" ],
       TA.Optional,
       (fun _ -> Split_spectra (TA.get_parameter ()) |> List.accum Parameters.program);
+    [ "--transform" ],
+      Some "TRANSFORMATION",
+      [ "replace the database with the one obtained applying the specified transformation.";
+        "Transformations are defined as follows:";
+        " TRANSFORMATION := 'threshold(' <non-negative_float>')'";
+        "                 | 'power(<float>)'";
+        "                 | 'binary'";
+        "                 | 'clr'";
+        "                 | 'pseudocounts('POWER','QUANTIZE')'";
+        " POWER := <non-negative_float>";
+        " QUANTIZE := 'false'|'true'";
+        "A value such that 0. <= THRESHOLD < 1. is interpreted as a fraction relative";
+        "to the sum of all the counts in the spectrum; values such that THRESHOLD >= 1.";
+        "are considered absolute thresholds; 'binary' is an alias for 'power(0)'.";
+        "For the exact definition of transformations 'clr' and 'pseudocounts', see";
+        " https://github.com/PaoloRibeca/KPop";
+        "or";
+        " https://doi.org/10.1186/s13059-025-03585-8" ],
+      TA.Default (fun () -> (KMerDB.Transformation.to_string Defaults.transformation)),
+      (fun _ ->
+        Transform (TA.get_parameter () |> KMerDB.Transformation.of_string) |> List.accum Parameters.program);
     [ "-d"; "--distill"; "--distill-kmers" ],
       Some "<classes_metadata_field_name> <summary_file_prefix>",
       [ "optimize k-mers by identifying which ones are most informative";
@@ -162,7 +182,7 @@ let () =
       TA.Optional,
       (fun _ -> To_file (TA.get_parameter ()) |> List.accum Parameters.program);
     [ "--distance"; "--distance-function" ],
-      Some "'euclidean'|'minkowski(<non_negative_float>)'",
+      Some "'euclidean'|'minkowski(<non-negative_float>)'",
       [ "set the function to be used when computing distances.";
         "The parameter for 'minkowski()' is the power" ],
       TA.Default (fun () -> Space.Distance.to_string Defaults.distance),
@@ -213,31 +233,6 @@ let () =
         "  if 'false': rows are [metadata and] k-mer names, columns spectrum names)" ],
       TA.Default (fun () -> string_of_bool Defaults.filter.transpose),
       (fun _ -> Table_transpose (TA.get_parameter_boolean ()) |> List.accum Parameters.program);
-    [ "--counts-threshold" ],
-      Some "<non_negative_integer>",
-      [ "set to zero all counts that are less than this threshold";
-        "before transforming and outputting them as table or spectra.";
-        "A fractional threshold between 0. and 1. is taken as a relative one";
-        "with respect to the sum of all counts in the spectrum" ],
-      TA.Default
-        (fun () -> (KMerDB.Transformation.to_parameters Defaults.filter.transform).threshold |> string_of_float),
-      (fun _ ->
-        Table_transform_threshold (TA.get_parameter_float_non_neg ()) |> List.accum Parameters.program);
-    [ "--counts-power" ],
-      Some "<non_negative_float>",
-      [ "raise counts to this power before transforming and outputting them";
-        "as table or spectra.";
-        "A power of 0 when the 'pseudocounts' method is used";
-        "performs a logarithmic transformation" ],
-      TA.Default (fun () -> (KMerDB.Transformation.to_parameters Defaults.filter.transform).power |> string_of_float),
-      (fun _ ->
-        Table_transform_power (TA.get_parameter_float_non_neg ()) |> List.accum Parameters.program);
-    [ "--counts-transform"; "--counts-transformation" ],
-      Some "'binary'|'power'|'pseudocounts'|'clr'",
-      [ "transformation to apply to counts before outputting them as table or spectra" ],
-      TA.Default (fun () -> (KMerDB.Transformation.to_parameters Defaults.filter.transform).which),
-      (fun _ ->
-        Table_transform_which (TA.get_parameter ()) |> List.accum Parameters.program);
     [ "--counts-output-zero-kmers"; "--counts-output-zero-k-mers" ],
       Some "'true'|'false'",
       [ "whether to output k-mers whose frequencies are all zero";
@@ -254,13 +249,15 @@ let () =
       Some "<file_prefix>",
       [ "write the database present in the register as a tab-separated file";
         " (rows are k-mer names, columns are spectrum names.";
-        "  The result will be given extension '.KPopCounter.txt' unless file is '/dev/*')" ],
+        "  The result will be given extension '.KPopCounter.txt'";
+        "  unless file is '/dev/*')" ],
       TA.Optional,
       (fun _ -> To_table (TA.get_parameter ()) |> List.accum Parameters.program);
     [ "-s"; "--spectra"; "--to-spectra" ],
       Some "<file_prefix>",
       [ "write the database present in the register as k-mer spectra";
-        " (the result will be given extension '.KPopSpectra.txt' unless file is '/dev/*')" ],
+        " (the result will be given extension '.KPopSpectra.txt'";
+        "  unless file is '/dev/*')" ],
       TA.Optional,
       (fun _ -> To_spectra (TA.get_parameter ()) |> List.accum Parameters.program);
     TA.make_separator_multiline [ ""; "Actions involving the selection register:" ];
@@ -354,7 +351,6 @@ let () =
   (* These are the registers available to the program *)
   let current = KMerDB.make_empty () |> ref and selected = ref StringSet.empty
   and combination_criterion = ref Defaults.combination_criterion
-  and transform = KMerDB.Transformation.to_parameters Defaults.filter.transform |> ref
   and filter = ref Defaults.filter
   and distance = ref Defaults.distance and distance_normalise = ref Defaults.distance_normalise in
   try
@@ -380,6 +376,10 @@ let () =
               !current new_label !selected !combination_criterion
         | Remove_selected ->
           current := KMerDB.remove_selected !current !selected
+        | Transform transformation ->
+          current :=
+            KMerDB.transform ~threads:!Parameters.threads ~verbose:!Parameters.verbose
+            transformation !current
         | Distill_kmers (classes_label, summary_prefix) ->
           KMerDB.distill_kmers ~threads:!Parameters.threads ~verbose:!Parameters.verbose
             !current classes_label summary_prefix
@@ -407,15 +407,6 @@ let () =
           filter := { !filter with print_metadata }
         | Table_transpose transpose ->
           filter := { !filter with transpose }
-        | Table_transform_threshold threshold ->
-          transform := { !transform with threshold };
-          filter := { !filter with transform = KMerDB.Transformation.of_parameters !transform }
-        | Table_transform_power power ->
-          transform := { !transform with power };
-          filter := { !filter with transform = KMerDB.Transformation.of_parameters !transform }
-        | Table_transform_which which ->
-          transform := { !transform with which };
-          filter := { !filter with transform = KMerDB.Transformation.of_parameters !transform }
         | Table_output_zero_rows print_zero_rows ->
           filter := { !filter with print_zero_rows }
         | Table_precision precision ->

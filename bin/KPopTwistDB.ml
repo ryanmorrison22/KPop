@@ -22,30 +22,26 @@ module RegisterType =
     type t =
       | Twister
       | Twisted
-    exception Invalid_register_type of string
     let of_string = function
       | "T" -> Twister
       | "t" -> Twisted
-      | w ->
-        Tools.Argv.usage ();
-        Invalid_register_type w |> raise
+      | s ->
+        Printf.sprintf "(%s): Invalid register type '%s'" __FUNCTION__ s |> failwith
   end
 
 module KeepAtMost =
   struct
     type t = int option
-    exception Invalid_keep_at_most of string
     let of_string = function
       | "all" -> None
-      | w ->
+      | s ->
         try
-          let res = int_of_string w in
+          let res = int_of_string s in
           if res <= 0 then
             raise Exit;
           Some res
         with _ ->
-          Tools.Argv.usage ();
-          Invalid_keep_at_most w |> raise
+          Printf.sprintf "(%s): Invalid keep_at_most '%s'" __FUNCTION__ s |> failwith
     let to_string = function
       | None -> "all"
       | Some n -> string_of_int n
@@ -107,8 +103,8 @@ module Parameters =
 
 let info = {
   Tools.Argv.name = "KPopTwistDB";
-  version = "44";
-  date = "20-Oct-2025"
+  version = "45";
+  date = "24-Oct-2025"
 } and authors = [
   "2022-2025", "Paolo Ribeca", "paolo.ribeca@gmail.com";
   "2024     ", "Ünsal Öztürk", "uensal.oeztuerk@gmail.com"

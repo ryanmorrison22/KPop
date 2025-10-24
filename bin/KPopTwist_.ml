@@ -24,10 +24,7 @@ module Parameters =
     let kmers_keep = ref ""
     (* The following three are KPopCountDB.TableFilter.default *)
     let kmers_sample = ref 1.
-    let threshold_counts = ref 1.
-    let power = ref 1.
     (*let precision = 15*)
-    let transformation = ref "power"
     let threshold_kmers = ref 0.
     let threads = Processes.Parallel.get_nproc () |> ref
     let temporaries = ref false
@@ -36,8 +33,8 @@ module Parameters =
 
 let info = {
   Tools.Argv.name = "KPopTwist";
-  version = "29";
-  date = "20-Oct-2025"
+  version = "30";
+  date = "24-Oct-2025"
 } and authors = [
   "2022-2025", "Paolo Ribeca", "paolo.ribeca@gmail.com"
 ]
@@ -60,26 +57,6 @@ let () =
         "after parameter -k has been applied and before twisting" ],
       TA.Default (fun () -> string_of_float !Parameters.kmers_sample),
       (fun _ -> Parameters.kmers_sample := TA.get_parameter_float_fraction ());
-    [ "--counts-threshold" ],
-      Some "<non-negative_float>",
-      [ "set to zero all counts that are less than this threshold";
-        "before transforming them.";
-        "A fractional threshold between 0. and 1. is taken as a relative one";
-        "with respect to the sum of all counts in the spectrum" ],
-      TA.Default (fun () -> string_of_float !Parameters.threshold_counts),
-      (fun _ -> Parameters.threshold_counts := TA.get_parameter_float_non_neg ());
-    [ "--counts-power" ],
-      Some "<non-negative_float>",
-      [ "raise counts to this power before transforming them.";
-        "A power of 0 when the 'pseudocounts' method is used";
-        "performs a logarithmic transformation" ],
-      TA.Default (fun () -> string_of_float !Parameters.power),
-      (fun _ -> Parameters.power := TA.get_parameter_float_non_neg ());
-    [ "--counts-transform"; "--counts-transformation" ],
-      Some "'binary'|'power'|'pseudocounts'|'clr'",
-      [ "transformation to apply to table elements" ],
-      TA.Default (fun () -> !Parameters.transformation),
-      (fun _ -> Parameters.transformation := TA.get_parameter ());
     [ "--kmers-threshold" ],
       Some "<non-negative_integer>",
       [ "compute the sum of all transformed (and possibly normalized) counts";
@@ -150,8 +127,7 @@ let () =
   (*
      For the time being, we just repeat input parameters
   *)
-  Printf.printf "%s\001%s\001%.12g\001%.12g\001%.12g\001%s\001%.12g\001%s\001%s\001%d\001%b\001%b\n%!"
-    !Parameters.input !Parameters.kmers_keep !Parameters.kmers_sample
-    !Parameters.threshold_counts !Parameters.power !Parameters.transformation !Parameters.threshold_kmers
+  Printf.printf "%s\001%s\001%.12g\001%.12g\001%s\001%s\001%d\001%b\001%b\n%!"
+    !Parameters.input !Parameters.kmers_keep !Parameters.kmers_sample !Parameters.threshold_kmers
     !Parameters.output !Parameters.output_kmers !Parameters.threads !Parameters.temporaries !Parameters.verbose
 

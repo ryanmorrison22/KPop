@@ -19,23 +19,20 @@ module Processes = BiOCamLib.Processes
 module Tools = BiOCamLib.Tools
 open BiOCamLib.Better
 
-(* We put this one here for lack of a better place *)
-module Spectra =
-  struct
-    let make_filename = function
-      | w when String.length w >= 5 && String.sub w 0 5 = "/dev/" -> w
-      | prefix -> prefix ^ ".KPopSpectra.txt"
-  end
-
-(* For counts. We assume each count to be < 2^31 *)
-module I32BAVector = Numbers.I32BAVector
-(* For normalisations and combined spectra. We assume normalisations might be > 2^31 *)
-module FBAVector = Numbers.FBAVector
-
 include (
   struct
+    (* We put this one here for lack of a better place *)
+    module Spectra =
+      struct
+        let make_filename = function
+          | s when String.length s >= 5 && String.sub s 0 5 = "/dev/" -> s
+          | prefix -> prefix ^ ".KPopSpectra.txt"
+      end
+    (* Counts are represented as 32-bit floats *)
+    module I32BAVector = Numbers.F32BAVector
     let ( .@() ) = I32BAVector.( .@() )
     let ( .@()<- ) = I32BAVector.( .@()<- )
+    (* *)
     type marshalled_t = {
       n_cols: int;
       n_rows: int;
@@ -63,97 +60,86 @@ include (
           max: int;
           sum: float;
           sum_log: float
-          (*
-          mean: float;
-          variance: float
-          *)
         }
         type statistics_table_t = {
           col_stats: statistics_t array;
           row_stats: statistics_t array
         }
         type t =
-          | Binary of float
-          | Power of float * float
-          | CLR of float * float
-          | Pseudo of float * float
-        exception Invalid_transformation of string * float * float
-        let epsilon = 0.1
+          | Threshold of float
+          | Power of float
+          | CLR
+          | Pseudo of float * bool
+        let of_string_re = Str.regexp "[(,)]"
+        let of_string s =
+          try
+            match Str.full_split of_string_re s with
+            | [ Text "threshold"; Delim "("; Text threshold; Delim ")" ] ->
+              Threshold (float_of_string threshold)
+            | [ Text "pow"; Delim "("; Text power; Delim ")" ]
+            | [ Text "power"; Delim "("; Text power; Delim ")" ] ->
+              Power (float_of_string power)
+            | [ Text "binary" ] ->
+              Power 0.
+            | [ Text "clr" ] | [ Text "CLR" ] ->
+              CLR
+            | [ Text "pseudo"; Delim "("; Text power; Delim ","; Text quantize; Delim ")" ]
+            | [ Text "pseudocounts"; Delim "("; Text power; Delim ","; Text quantize; Delim ")" ] ->
+              let power = float_of_string power in
+              let res = Pseudo (power, bool_of_string quantize) in
+              if power < 0. then
+                Printf.sprintf "(%s): Invalid transformation '%s'" __FUNCTION__ s |> failwith;
+              res
+            | _ ->
+              raise Not_found
+          with _ ->
+            Printf.sprintf "(%s): Unknown transformation '%s'" __FUNCTION__ s |> failwith
+        let to_string = function
+          | Threshold threshold ->
+            Printf.sprintf "threshold(%g)" threshold
+          | Power power ->
+            Printf.sprintf "power(%g)" power
+          | CLR ->
+            "clr"
+          | Pseudo (power, quantize) ->
+            Printf.sprintf "pseudocounts(%g,%b)" power quantize
         let [@warning "-27"] compute ~which ~col_num ~col_stats ~row_num ~row_stats counts =
-          let counts = float_of_int counts
-          and threshold =
-            match which with
-            | Binary threshold | Power (threshold, _) | CLR (threshold, _) | Pseudo (threshold, _) ->
+          match which with
+          | Threshold threshold ->
+            let threshold =
               if threshold < 1. then
                 threshold *. col_stats.sum
               else
                 threshold in
-          match which with
-          | Binary _ ->
-            if counts >= threshold then
-              1.
-            else
-              0.
-          | Power (_, 1.) -> (* Optimisation *)
             if counts >= threshold then
               counts
             else
               0.
-          | Power (_, power) ->
-            if counts >= threshold then
-              counts ** power
-            else
-              0.
-          | CLR (_, power) ->
-            let v =
-              if counts >= threshold then
-                counts
-              else
-                0. in
-            let v = max v epsilon in
-            (log v *. power) -. (col_stats.sum_log /. float_of_int col_stats.non_zero)
-          | Pseudo (thr, power) ->
+          | Power 1. -> (* Optimisation *)
+            counts
+          | Power power ->
+            counts ** power
+          | CLR ->
+            (float_of_int col_stats.max +. 1.) *. log (counts +. 1.)
+          | Pseudo (power, quantize) ->
             if power < 0. then
-              Invalid_transformation ("pseudocounts", thr, power) |> raise;
+              to_string which |> Printf.sprintf "(%s): Invalid transformation '%s'" __FUNCTION__ |> failwith;
             let v =
               if power = 0. then
-                (float_of_int col_stats.max) *. log ((counts +. 1.) /. threshold)
+                (float_of_int col_stats.max +. 1.) *. log (counts +. 1.)
               else begin
-                let red_threshold = threshold -. 1. |> max 0. in
-                let c_p = red_threshold ** power in
                 if power < 1. then
-                  ((counts ** power) -. c_p) *. ((float_of_int col_stats.max) ** (1. -. power)) /. power
+                  (counts ** power) *. ((float_of_int col_stats.max) ** (1. -. power)) /. power
                 else
-                  ((counts ** power) -. c_p) /. ((threshold ** power) -. c_p)
+                  (counts ** power)
               end in
-            floor v /. col_stats.sum |> max 0.
-        type parameters_t = {
-          which: string;
-          threshold: float;
-          power: float
-        }
-        exception Unknown_transformation of string
-        let of_parameters { which; threshold; power } =
-          match which with
-          | "binary" ->
-            Binary threshold
-          | "power" | "pow" ->
-            Power (threshold, power)
-          | "clr" | "CLR" ->
-            CLR (threshold, power)
-          | "pseudocounts" | "pseudo" ->
-            Pseudo (threshold, power)
-          | s ->
-            Unknown_transformation s |> raise
-        let to_parameters = function
-          | Binary threshold -> { which = "binary"; threshold; power = 1. }
-          | Power (threshold, power) -> { which = "power"; threshold; power }
-          | CLR (threshold, power) -> { which = "clr"; threshold; power }
-          | Pseudo (threshold, power) -> { which = "pseudocounts"; threshold; power }
-      end
+            if quantize then
+              floor v
+            else
+              v
+    end
     (* Implementation function *)
-    let stats_table_of_core_db ?(threads = 1) ?(verbose = false) transf core =
-      let { Transformation.threshold; power; _ } = Transformation.to_parameters transf in
+    let stats_table_of_core_db ?(threads = 1) ?(verbose = false) core =
       let compute_one what n =
         let red_len =
           match what with
@@ -161,22 +147,6 @@ include (
             core.n_rows - 1
           | Row ->
             core.n_cols - 1 in
-        (* Here in order to compute the threshold we have to pre-compute the normalisation *)
-        let sum = ref 0. in
-        for i = 0 to red_len do
-          let v =
-            match what with
-            | Col ->
-              I32BAVector.N.to_int core.storage.(n).@(i)
-            | Row ->
-              I32BAVector.N.to_int core.storage.(i).@(n) in
-          sum := !sum +. (float_of_int v ** power)
-        done;
-        let threshold =
-          if threshold < 1. then
-            threshold *. !sum
-          else
-            threshold in
         let non_zero = ref 0 and min = ref 0 and max = ref 0 and sum = ref 0. and sum_log = ref 0. in
         for i = 0 to red_len do
           let v =
@@ -186,13 +156,12 @@ include (
             | Row ->
               I32BAVector.N.to_int core.storage.(i).@(n) in
           let f_v = float_of_int v in
-          if f_v >= threshold then begin
+          if f_v >= 0. then
             incr non_zero;
-            min := Stdlib.min !min v;
-            max := Stdlib.max !max v;
-            sum := !sum +. (f_v ** power);
-            sum_log := !sum_log +. (log f_v *. power)
-          end
+          min := Stdlib.min !min v;
+          max := Stdlib.max !max v;
+          sum := !sum +. f_v;
+          sum_log := !sum_log +. log f_v
         done;
         { Transformation.non_zero = !non_zero;
           min = !min;
@@ -347,7 +316,6 @@ include (
           _resize_t_array_ ~is_buffer M.length resize (fun l -> M.make l M.N.zero)
       end
     module I32BAVectorMisc = BAVectorMisc (I32BAVector)
-    module FBAVectorMisc = BAVectorMisc (FBAVector)
     (* Utility functions *)
     let invert_table a =
       let res = StringHashtbl.create (Array.length a) in
@@ -371,7 +339,7 @@ include (
         }
       end
     (* *)
-    let archive_version = "2022-04-03"
+    let archive_version = "2025-10-20"
     (* *)
     let make_filename_binary = function
       | w when String.length w >= 5 && String.sub w 0 5 = "/dev/" -> w
@@ -596,14 +564,14 @@ include (
       !res
     let selected_negate db selection =
       StringSet.diff (Array.to_list db.core.idx_to_col_names |> StringSet.of_list) selection
-    exception Unknown_combination_criterion of string
     module CombinationCriterion =
       struct
         type t = RescaledMean | RescaledMedian
         let of_string = function
           | "mean" -> RescaledMean
           | "median" -> RescaledMedian
-          | w -> Unknown_combination_criterion w |> raise
+          | s ->
+            Printf.sprintf "(%s): Unknown criterion '%s'" __FUNCTION__ s |> failwith
         let to_string = function
           | RescaledMean -> "mean"
           | RescaledMedian -> "median"
@@ -612,9 +580,7 @@ include (
         as a temporary vector is used to generate the combination *)
     let add_combined_selected ?(threads = 1) ?(elements_per_step = 10000) ?(verbose = false)
         db new_label selection criterion =
-      (* Here we want no thresholding and linear statistics *)
-      let transf = Transformation.of_parameters { which = "power"; threshold = 1.; power = 1. } in
-      let stats = stats_table_of_core_db ~threads ~verbose transf db.core and db = ref db in
+      let stats = stats_table_of_core_db ~threads ~verbose db.core and db = ref db in
       if verbose then
         Printf.eprintf "(%s): Adding/replacing spectrum '%s': [%!" __FUNCTION__ new_label;
       (* We allocate the result *)
@@ -682,7 +648,7 @@ include (
           for i = lo_row to lo_row + n_processed - 1 do
             let res_i = block.(i - lo_row) in
             Numbers.Float.(norm ++ res_i);
-            let res_i = Int32.of_float res_i in
+            let res_i = I32BAVector.N.of_float res_i in
             (* Actual copy to storage *)
             new_col.@(i) <- res_i
           done;
@@ -801,9 +767,7 @@ include (
     exception Invalid_number_of_classes of int
     let distill_kmers ?(threads = 1) ?(elements_per_step = 10000) ?(verbose = false)
         db classes_label summary_prefix =
-      (* Here we want no thresholding and linear statistics *)
-      let transf = Transformation.of_parameters { which = "power"; threshold = 1.; power = 1. } in
-      let stats_table = stats_table_of_core_db ~threads ~verbose transf db.core in
+      let stats_table = stats_table_of_core_db ~threads ~verbose db.core in
       let n_classes, _, ind_classes = get_indicator_vector db classes_label and n_samples = db.core.n_cols in
       if n_classes = 1 || n_classes = n_samples then
         Invalid_number_of_classes n_classes |> raise;
@@ -962,7 +926,6 @@ include (
           print_col_names: bool;
           print_metadata: bool;
           transpose: bool;
-          transform: Transformation.t;
           print_zero_rows: bool;
           filter_columns: StringSet.t;
           precision: int
@@ -972,7 +935,6 @@ include (
           print_col_names = true;
           print_metadata = false;
           transpose = false;
-          transform = Transformation.of_parameters { which = "power"; threshold = 1.; power = 1. };
           print_zero_rows = false;
           filter_columns = StringSet.empty;
           precision = 15
@@ -981,10 +943,52 @@ include (
     let make_filename_table = function
       | w when String.length w >= 5 && String.sub w 0 5 = "/dev/" -> w
       | prefix -> prefix ^ ".KPopCounter.txt"
+    let transform ?(threads = 1) ?(elements_per_step = 40000) ?(verbose = false) transformation db =
+      let transform = Transformation.compute ~which:transformation
+      and stats = stats_table_of_core_db ~threads ~verbose db.core
+      and n_rows = db.core.n_rows and n_cols = db.core.n_cols
+      and new_storage = Array.copy db.core.storage and processed_cols = ref 0 in
+      Processes.Parallel.process_stream_chunkwise
+        (fun () ->
+          if !processed_cols < n_cols then
+            let to_do = max 1 (elements_per_step / n_rows) |> min (n_cols - !processed_cols) in
+            let new_processed_cols = !processed_cols + to_do in
+            let res = !processed_cols, new_processed_cols - 1 in
+            processed_cols := new_processed_cols;
+            res
+          else
+            raise End_of_file)
+        (fun (lo_col, hi_col) ->
+          let res = ref [] in
+          for col_idx = lo_col to hi_col do
+            List.accum res begin
+              col_idx,
+              I32BAVector.mapi
+                (fun row_idx n ->
+                  transform
+                    ~col_num:n_cols ~col_stats:stats.col_stats.(col_idx)
+                    ~row_num:n_rows ~row_stats:stats.row_stats.(row_idx) n)
+                db.core.storage.(col_idx)
+            end
+          done;
+          !res)
+        (List.iter
+          (fun (col_idx, col) ->
+            new_storage.(col_idx) <- col;
+            incr processed_cols;
+            if verbose then
+              Printf.eprintf "%s\r(%s): Transforming database: done %d/%d %s%!"
+                String.TermIO.clear __FUNCTION__ !processed_cols n_cols
+                (String.pluralize_int "column" !processed_cols)))
+        threads;
+      if verbose then
+        Printf.eprintf "%s\r(%s): Transforming database: done %d/%d %s.\n%!"
+          String.TermIO.clear __FUNCTION__ n_cols n_cols
+          (String.pluralize_int "column" n_cols);
+      { db with core = { db.core with storage = new_storage } }
     let to_table
         ?(filter = TableFilter.default) ?(threads = 1) ?(elements_per_step = 40000) ?(verbose = false) db prefix =
-      let transform = Transformation.compute ~which:filter.transform
-      and stats = stats_table_of_core_db ~threads ~verbose filter.transform db.core
+      let stats = stats_table_of_core_db ~threads ~verbose db.core
       and fname = make_filename_table prefix in
       let output = open_out fname and meta = ref [] and rows = ref [] and cols = ref [] in
       (* We determine which rows and colunms should be output after all filters have been applied *)
@@ -1059,12 +1063,8 @@ include (
                 Array.iter
                   (fun (_, row_idx) ->
                     Printf.bprintf buf "%s%.*g"
-                      (if !first_done || filter.print_row_names then "\t" else "") filter.precision begin
-                        I32BAVector.N.to_int db.core.storage.(col_idx).@(row_idx) |>
-                          transform
-                            ~col_num:db.core.n_cols ~col_stats:stats.col_stats.(col_idx)
-                            ~row_num:db.core.n_rows ~row_stats:stats.row_stats.(row_idx)
-                      end;
+                      (if !first_done || filter.print_row_names then "\t" else "") filter.precision
+                      db.core.storage.(col_idx).@(row_idx);
                     first_done := true)
                   rows;
                 Printf.bprintf buf "\n"
@@ -1120,12 +1120,8 @@ include (
                 Array.iteri
                   (fun i (_, col_idx) ->
                     Printf.bprintf buf "%s%.*g"
-                      (if i > 0 || filter.print_row_names then "\t" else "") filter.precision begin
-                        I32BAVector.N.to_int db.core.storage.(col_idx).@(row_idx) |>
-                          transform
-                            ~col_num:db.core.n_cols ~col_stats:stats.col_stats.(col_idx)
-                            ~row_num:db.core.n_rows ~row_stats:stats.row_stats.(row_idx)
-                      end)
+                      (if i > 0 || filter.print_row_names then "\t" else "") filter.precision
+                      db.core.storage.(col_idx).@(row_idx))
                   cols;
                 Printf.bprintf buf "\n"
               done;
@@ -1151,8 +1147,7 @@ include (
       close_out output
     let to_spectra
         ?(filter = TableFilter.default) ?(threads = 1) ?(elements_per_step = 40000) ?(verbose = false) db prefix =
-      let transform = Transformation.compute ~which:filter.transform
-      and stats = stats_table_of_core_db ~threads ~verbose filter.transform db.core
+      let stats = stats_table_of_core_db ~threads ~verbose db.core
       and fname = Spectra.make_filename prefix in
       let output = open_out fname and rows = ref [] and cols = ref [] in
       (* We determine which rows and colunms should be output after all filters have been applied *)
@@ -1194,11 +1189,7 @@ include (
               Printf.bprintf buf "\t%s\n" col_name;
               Array.iter
                 (fun (row_name, row_idx) ->
-                  let value =
-                    I32BAVector.N.to_int db.core.storage.(col_idx).@(row_idx) |>
-                      transform
-                        ~col_num:db.core.n_cols ~col_stats:stats.col_stats.(col_idx)
-                        ~row_num:db.core.n_rows ~row_stats:stats.row_stats.(row_idx) in
+                  let value = db.core.storage.(col_idx).@(row_idx) in
                   if value > 0. then
                     Printf.bprintf buf "%s\t%.*g\n" row_name filter.precision value)
                 rows
@@ -1220,8 +1211,7 @@ include (
     let to_distances
         ?(precision = 15) ?(normalise = true) ?(threads = 1) ?(elements_per_step = 100) ?(verbose = false)
         distance db selection_1 selection_2 prefix =
-      let transf = Transformation.of_parameters { which = "power"; threshold = 1.; power = 1. } in
-      let stats = stats_table_of_core_db ~threads ~verbose transf db.core
+      let stats = stats_table_of_core_db ~threads ~verbose db.core
       and n_r = db.core.n_rows in (* Number of k-mers. It stays the same even if we select a subset of spectra *)
       let make_submatrix selection =
         (* We select spectra, i.e. columns *)
@@ -1261,6 +1251,11 @@ include (
           Matrix.Base.get_distance_rowwise ~threads ~elements_per_step ~verbose distance metric matrix_1 matrix_2
       } prefix
   end: sig
+    module Spectra:
+      sig
+        val make_filename: string -> string
+      end
+    module I32BAVector = Numbers.F32BAVector
     (* Conceptually, each k-mer spectrum is stored as a column, even though in practice we store the transposed matrix -
         i.e., storage is a vector of spectra *)
     type marshalled_t = {
@@ -1282,32 +1277,23 @@ include (
           min: int;
           max: int;
           sum: float;
-          sum_log: float
+          sum_log: float;
           (*
           mean: float;
           variance: float
           (* Could be extended with more moments if needed *)
+          harmonic: float (* The harmonic mean of non-zero elements *)
           *)
         }
         (* Transformation function *)
         type t =
-          | Binary of float
-          | Power of float * float
-          | CLR of float * float
-          | Pseudo of float * float
-        exception Invalid_transformation of string * float * float
-        (* Only used internally *)
-        val [@warning "-32"] compute:
-          which:t -> col_num:int -> col_stats:statistics_t -> row_num:int -> row_stats:statistics_t -> int -> float
-        type parameters_t = {
-          which: string;
-          (* A value in the interval (0.,1.) is taken as a relative threshold *)
-          threshold: float;
-          power: float
-        }
-        exception Unknown_transformation of string
-        val of_parameters: parameters_t -> t
-        val to_parameters: t -> parameters_t
+          (* Thresholds in the interval (0.,1.) are taken as relative ones *)
+          | Threshold of float
+          | Power of float
+          | CLR
+          | Pseudo of float * bool (* The boolean is whether to quantise *)
+        val of_string: string -> t
+        val to_string: t -> string
       end
     type t = {
       core: marshalled_t;
@@ -1329,7 +1315,6 @@ include (
     (* Select column names identified by regexps on metadata fields *)
     val selected_from_regexps: ?verbose:bool -> t -> (string * Str.regexp) list -> StringSet.t
     val selected_negate: t -> StringSet.t -> StringSet.t
-    exception Unknown_combination_criterion of string
     module CombinationCriterion:
       sig
         type t = RescaledMean | RescaledMedian
@@ -1363,13 +1348,15 @@ include (
           print_col_names: bool;
           print_metadata: bool;
           transpose: bool;
-          transform: Transformation.t;
           print_zero_rows: bool;
           filter_columns: StringSet.t;
           precision: int
         }
         val default: t
       end
+    (* Transformations *)
+    val transform: ?threads:int -> ?elements_per_step:int -> ?verbose:bool ->
+                   Transformation.t -> t -> t
     (* Readable output *)
     val to_table: ?filter:TableFilter.t -> ?threads:int -> ?elements_per_step:int -> ?verbose:bool ->
                   t -> string -> unit
