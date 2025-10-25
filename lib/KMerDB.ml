@@ -28,10 +28,63 @@ include (
           | s when String.length s >= 5 && String.sub s 0 5 = "/dev/" -> s
           | prefix -> prefix ^ ".KPopSpectra.txt"
       end
-    (* Counts are represented as 32-bit floats *)
-    module I32BAVector = Numbers.F32BAVector
-    let ( .@() ) = I32BAVector.( .@() )
-    let ( .@()<- ) = I32BAVector.( .@()<- )
+    (* Utility function to resize arrays *)
+    let _resize_t_array_ ?(is_buffer = true) length resize create_null nx ny a =
+      let lx = Array.length a in
+      let eff_nx =
+        if is_buffer then begin
+          if lx < nx then
+            max nx (lx * 14 / 10)
+          else
+            lx
+        end else
+          nx
+      and eff_ny =
+        if is_buffer then begin
+          if lx > 0 then begin
+            (* We assume all bigarrays to have the same size *)
+            let ly = length a.(0) in
+            if ly < ny then
+              max ny (ly * 14 / 10)
+            else
+              ly
+          end else
+            ny
+        end else
+          ny in
+      (*Printf.eprintf "(%s): Resizing to (%d,%d) - asked (%d,%d)...\n%!" __FUNCTION__ eff_nx eff_ny nx ny;*)
+      if eff_nx > lx then
+        Array.append
+          (* We need to provide the is_buffer argument like this because of type resolution *)
+          (Array.map (resize ?is_buffer:(Some false) eff_ny) a)
+          (Array.init (eff_nx - lx) (fun _ -> create_null eff_ny))
+      else if eff_nx < lx then
+        Array.map (resize ?is_buffer:(Some false) eff_ny) (Array.sub a 0 eff_nx)
+      else (* eff_nx = lx *)
+        if lx > 0 && eff_ny = length a.(0) then
+          a
+        else
+          Array.map (resize ?is_buffer:(Some false) eff_ny) a
+    module String =
+      struct
+        include String
+        let resize_array ?(is_buffer = true) n a =
+          Array.resize ~is_buffer n "" a
+        (* *)
+        let resize_array_array ?(is_buffer = true) =
+          _resize_t_array_ ~is_buffer Array.length resize_array (fun l -> Array.make l "")
+      end
+    (* Counts are represented as 32-bit floats, with a couple additional modifications *)
+    module CountBAVector =
+      struct
+        include Numbers.F32BAVector
+        let resize ?(is_buffer = true) n =
+          resize ~is_buffer ~fill_with:N.zero n
+        let resize_array ?(is_buffer = true) =
+          _resize_t_array_ ~is_buffer length resize (fun l -> make l N.zero)
+      end
+    let ( .@() ) = CountBAVector.( .@() )
+    let ( .@()<- ) = CountBAVector.( .@()<- )
     (* *)
     type marshalled_t = {
       n_cols: int;
@@ -41,7 +94,7 @@ include (
       idx_to_row_names: string array;
       idx_to_meta_names: string array;
       meta: string array array;
-      storage: I32BAVector.t array
+      storage: CountBAVector.t array
     }
     module ColOrRow =
       struct
@@ -152,9 +205,9 @@ include (
           let v =
             match what with
             | Col ->
-              I32BAVector.N.to_int core.storage.(n).@(i)
+              CountBAVector.N.to_int core.storage.(n).@(i)
             | Row ->
-              I32BAVector.N.to_int core.storage.(i).@(n) in
+              CountBAVector.N.to_int core.storage.(i).@(n) in
           let f_v = float_of_int v in
           if f_v >= 0. then
             incr non_zero;
@@ -266,56 +319,6 @@ include (
             Printf.eprintf " '%s'" s)
         db.core.idx_to_meta_names;
       Printf.eprintf "\n%!"
-    (* *)
-    let resize_string_array ?(is_buffer = true) n a =
-      Array.resize ~is_buffer n "" a
-    (* *)
-    let _resize_t_array_ ?(is_buffer = true) length resize create_null nx ny a =
-      let lx = Array.length a in
-      let eff_nx =
-        if is_buffer then begin
-          if lx < nx then
-            max nx (lx * 14 / 10)
-          else
-            lx
-        end else
-          nx
-      and eff_ny =
-        if is_buffer then begin
-          if lx > 0 then begin
-            (* We assume all bigarrays to have the same size *)
-            let ly = length a.(0) in
-            if ly < ny then
-              max ny (ly * 14 / 10)
-            else
-              ly
-          end else
-            ny
-        end else
-          ny in
-      (*Printf.eprintf "(%s): Resizing to (%d,%d) - asked (%d,%d)...\n%!" __FUNCTION__ eff_nx eff_ny nx ny;*)
-      if eff_nx > lx then
-        Array.append
-          (* We need to provide the is_buffer argument like this because of type resolution *)
-          (Array.map (resize ?is_buffer:(Some false) eff_ny) a)
-          (Array.init (eff_nx - lx) (fun _ -> create_null eff_ny))
-      else if eff_nx < lx then
-        Array.map (resize ?is_buffer:(Some false) eff_ny) (Array.sub a 0 eff_nx)
-      else (* eff_nx = lx *)
-        if lx > 0 && eff_ny = length a.(0) then
-          a
-        else
-          Array.map (resize ?is_buffer:(Some false) eff_ny) a
-    let resize_string_array_array ?(is_buffer = true) =
-      _resize_t_array_ ~is_buffer Array.length resize_string_array (fun l -> Array.make l "")
-    module BAVectorMisc (M: Numbers.Vector_t) =
-      struct
-        let resize ?(is_buffer = true) n =
-          M.resize ~is_buffer ~fill_with:M.N.zero n
-        let resize_array ?(is_buffer = true) =
-          _resize_t_array_ ~is_buffer M.length resize (fun l -> M.make l M.N.zero)
-      end
-    module I32BAVectorMisc = BAVectorMisc (I32BAVector)
     (* Utility functions *)
     let invert_table a =
       let res = StringHashtbl.create (Array.length a) in
@@ -333,8 +336,8 @@ include (
             n_cols = aug_n_cols;
             (* We have to resize all the relevant containers *)
             idx_to_col_names = Array.append !db.core.idx_to_col_names [| label |];
-            meta = resize_string_array_array ~is_buffer:true aug_n_cols !db.core.n_meta !db.core.meta;
-            storage = I32BAVectorMisc.resize_array ~is_buffer:true aug_n_cols !db.core.n_rows !db.core.storage
+            meta = String.resize_array_array ~is_buffer:true aug_n_cols !db.core.n_meta !db.core.meta;
+            storage = CountBAVector.resize_array ~is_buffer:true aug_n_cols !db.core.n_rows !db.core.storage
           }
         }
       end
@@ -355,11 +358,11 @@ include (
       output_value output {
         db.core with
         (* We have to truncate all the containers *)
-        idx_to_col_names = resize_string_array ~is_buffer:false db.core.n_cols db.core.idx_to_col_names;
-        idx_to_row_names = resize_string_array ~is_buffer:false db.core.n_rows db.core.idx_to_row_names;
-        idx_to_meta_names = resize_string_array ~is_buffer:false db.core.n_meta db.core.idx_to_meta_names;
-        meta = resize_string_array_array ~is_buffer:false db.core.n_cols db.core.n_meta db.core.meta;
-        storage = I32BAVectorMisc.resize_array ~is_buffer:false db.core.n_cols db.core.n_rows db.core.storage
+        idx_to_col_names = String.resize_array ~is_buffer:false db.core.n_cols db.core.idx_to_col_names;
+        idx_to_row_names = String.resize_array ~is_buffer:false db.core.n_rows db.core.idx_to_row_names;
+        idx_to_meta_names = String.resize_array ~is_buffer:false db.core.n_meta db.core.idx_to_meta_names;
+        meta = String.resize_array_array ~is_buffer:false db.core.n_cols db.core.n_meta db.core.meta;
+        storage = CountBAVector.resize_array ~is_buffer:false db.core.n_cols db.core.n_rows db.core.storage
       };
       close_out output;
       if verbose then
@@ -411,7 +414,7 @@ include (
             n_meta;
             (* We have to resize all the relevant containers *)
             idx_to_meta_names = Array.append !db.core.idx_to_meta_names missing;
-            meta = resize_string_array_array ~is_buffer:true !db.core.n_cols n_meta !db.core.meta
+            meta = String.resize_array_array ~is_buffer:true !db.core.n_cols n_meta !db.core.meta
           }
         }
       end;
@@ -497,22 +500,22 @@ include (
                       n_rows = aug_n_rows;
                       (* We have to resize all the relevant containers *)
                       idx_to_row_names = begin
-                        let res = resize_string_array ~is_buffer:true aug_n_rows !db.core.idx_to_row_names in
+                        let res = String.resize_array ~is_buffer:true aug_n_rows !db.core.idx_to_row_names in
                         res.(n_rows) <- line.(0);
                         res
                       end;
-                      storage = I32BAVectorMisc.resize_array ~is_buffer:true !db.core.n_cols aug_n_rows !db.core.storage
+                      storage = CountBAVector.resize_array ~is_buffer:true !db.core.n_cols aug_n_rows !db.core.storage
                     }
                   }
                 end;
                 let row_idx = StringHashtbl.find !db.row_names_to_idx line.(0) in
                 let v =
                   try
-                    I32BAVector.N.of_string line.(1)
+                    CountBAVector.N.of_string line.(1)
                   with _ ->
                     Wrong_format (!line_num, line.(1)) |> raise in
                 (* If there are repeated k-mers, we just accumulate them *)
-                !db.core.storage.(!col_idx).I32BAVector.+(row_idx) <- v
+                !db.core.storage.(!col_idx).CountBAVector.+(row_idx) <- v
               end
             done
           with End_of_file ->
@@ -630,7 +633,7 @@ include (
                 (* All counts are non-negative *)
                 if norm > 0. then
                   (* We add the renormalised sum to the suitable row histogram *)
-                  I32BAVector.N.to_float col.@(i) *. max_norm /. norm |> Freqs.add row_combinators.(i - lo_row))
+                  CountBAVector.N.to_float col.@(i) *. max_norm /. norm |> Freqs.add row_combinators.(i - lo_row))
               found_cols
           done;
           (* For each row histogram in the input range, we now generate a combination and pass it along *)
@@ -648,7 +651,7 @@ include (
           for i = lo_row to lo_row + n_processed - 1 do
             let res_i = block.(i - lo_row) in
             Numbers.Float.(norm ++ res_i);
-            let res_i = I32BAVector.N.of_float res_i in
+            let res_i = CountBAVector.N.of_float res_i in
             (* Actual copy to storage *)
             new_col.@(i) <- res_i
           done;
@@ -760,7 +763,7 @@ include (
         !split_names;
       remove_selected !res (Array.to_seq db.core.idx_to_col_names |> StringSet.of_seq)
     (* *)
-    module Stats = Numbers.OnlineStats(Numbers.Float) (*(I32BAVector.N)*)
+    module Stats = Numbers.OnlineStats(Numbers.Float) (*(CountBAVector.N)*)
     module Freqs = Numbers.FloatFreqsVector
     module FAVector = Numbers.FAVector
     module LF_FAVector = Numbers.LinearFit(FAVector)
@@ -798,7 +801,7 @@ include (
         (fun (lo_kmer, hi_kmer) ->
           let res = ref [] in
           for kmer = lo_kmer to hi_kmer do
-            I32BAVector.(
+            CountBAVector.(
               (* We iterate over all the couples of samples *)
               for i = 0 to n_samples - 1 do
                 let ind_class_i = ind_classes.(i)
@@ -963,7 +966,7 @@ include (
           for col_idx = lo_col to hi_col do
             List.accum res begin
               col_idx,
-              I32BAVector.mapi
+              CountBAVector.mapi
                 (fun row_idx n ->
                   transform
                     ~col_num:n_cols ~col_stats:stats.col_stats.(col_idx)
@@ -1242,7 +1245,7 @@ include (
                 Printf.eprintf "Norm@%d=%g\n%!" idx norm;
                 *)
                 Float.Array.init n_r
-                  (fun j -> I32BAVector.N.to_float db.core.storage.(idx).@(j) /. norm)) } in
+                  (fun j -> CountBAVector.N.to_float db.core.storage.(idx).@(j) /. norm)) } in
       let metric = Float.Array.make n_r 1.
       and matrix_1 = make_submatrix selection_1 and matrix_2 = make_submatrix selection_2 in
       Matrix.to_file ~precision ~threads ~elements_per_step ~verbose {
@@ -1255,7 +1258,11 @@ include (
       sig
         val make_filename: string -> string
       end
-    module I32BAVector = Numbers.F32BAVector
+    module CountBAVector:
+      sig
+        include module type of Numbers.F32BAVector
+        val resize: ?is_buffer:bool -> int -> t -> t
+      end
     (* Conceptually, each k-mer spectrum is stored as a column, even though in practice we store the transposed matrix -
         i.e., storage is a vector of spectra *)
     type marshalled_t = {
@@ -1268,7 +1275,7 @@ include (
       idx_to_meta_names: string array;
       (* *)
       meta: string array array; (* Dims = n_cols * n_meta *)
-      storage: I32BAVector.t array (* Frequencies are stored as integers. Dims = n_cols * n_rows *)
+      storage: CountBAVector.t array (* Frequencies are stored as integers. Dims = n_cols * n_rows *)
     }
     module Transformation:
       sig
