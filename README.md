@@ -1,7 +1,7 @@
 
 # `KPop`: Unleash the full power of your *k*-mers!
 
-`KPop` is an assembly-free and scalable method for the comparative analysis of microbial genomes and environmental samples. It is based on full *k*-mer spectra and dataset-specific transformations; it allows to accurately compare hundreds of thousands of assembled, or thousands of unassembled microbial genomes or sequenced samples, in a matter of hours. It provides excellent resolution across a very large number of use cases and applications. More details can be found in our [bioRxiv preprint](https://www.biorxiv.org/content/10.1101/2022.06.22.497172v2).
+`KPop` is an assembly-free and scalable method for the comparative analysis of microbial genomes and environmental samples. It is based on full *k*-mer spectra and dataset-specific transformations; it allows to accurately compare hundreds of thousands of assembled, or thousands of unassembled microbial genomes or sequenced samples, in a matter of hours. It provides excellent resolution across a very large number of use cases and applications. More details can be found in our [Genome Biology paper](https://doi.org/10.1186/s13059-025-03585-8).
 
 ## Table of contents
 
@@ -224,7 +224,7 @@ Both OCaml and R are highly portable and you might be able to manually compile/i
 
 ### How does `KPop` compare with minimiser-based methods?
 
-`KPop` is much more sensitive than minimiser-based methods, allowing out-of-the-box accurate comparison of assembled or unassembled long sequences irrespective of whether they differ by single nucleotides or by large portions. This is usually not true for minimiser-based methods, irrespective of the hashing scheme they use, as they only produce a much coarser comparison. A number of benchmarks and a detailed explanation of the differences between the two approaches can be found in our [bioRxiv preprint](https://www.biorxiv.org/content/10.1101/2022.06.22.497172v2).
+`KPop` is much more sensitive than minimiser-based methods, allowing out-of-the-box accurate comparison of assembled or unassembled long sequences irrespective of whether they differ by single nucleotides or by large portions. This is usually not true for minimiser-based methods, irrespective of the hashing scheme they use, as they only produce a much coarser comparison. A number of benchmarks and a detailed explanation of the differences between the two approaches can be found in our [Genome Biology paper](https://doi.org/10.1186/s13059-025-03585-8).
 
 Crucially, while minimiser-based methods are geared towards providing distances between sequences, `KPop` explicitly produces *embeddings*, i.e., it is able to turn sequences into points of a low-dimensionality latent space. Having an explicit latent space is important for many reasons &mdash; it helps explainability; it also makes it possible to perform direct clustering and use vector [DBs](https://milvus.io/) or [libraries](https://github.com/facebookresearch/faiss) to store and search embedded sequences.
 
@@ -236,7 +236,7 @@ All `KPop` programs are parallelised and will automatically use as many CPUs as 
 
 ### How do I choose *k*?
 
-As explained in our [bioRxiv preprint](https://www.biorxiv.org/content/10.1101/2022.06.22.497172v2), the choice of *k* can be tricky, and you should always make sure you try different results and select the lowest value of *k* for which results become stable. One empirical criterion that might help you in most cases is to choose
+As explained in our [Genome Biology paper](https://doi.org/10.1186/s13059-025-03585-8), the choice of *k* can be tricky, and you should always make sure you try different results and select the lowest value of *k* for which results become stable. One empirical criterion that might help you in most cases is to choose
 ```math
   k := {
     \mathrm{argmax}_k \displaystyle
@@ -268,13 +268,13 @@ In response to such needs, `KPopCountDB` and `KPopTwistDB` are able to execute a
 In addition, both `KPopCountDB` and `KPopTwistDB` have *registers*, i.e., slots to/from which the contents of external files and the results of computations can be loaded/saved. You can see registers as program variables, each one having a specific type. For instance, the `KPop` programs know that only twisters can be loaded to/saved from twister registers, and will enforce that by requiring and checking that your external file has the correct extension (`.KPopTwister`) and format when doing I/O to/from a twister register.
 
 `KPopCountDB` has two registers:
-* a *database* register, holding a set of *k*-mer spectra (i.e., a set of *k*-mers and their associated frequencies). There is one spectrum per sample, and additional metadata in the form of strings or numbers can be associated to the samples (see our [bioRxiv preprint](https://www.biorxiv.org/content/10.1101/2022.06.22.497172v2) for more information). Due to space optimisation reasons, modifications of the database happen in-place
+* a *database* register, holding a set of *k*-mer spectra (i.e., a set of *k*-mers and their associated frequencies). There is one spectrum per sample, and additional metadata in the form of strings or numbers can be associated to the samples (see our [Genome Biology paper](https://doi.org/10.1186/s13059-025-03585-8) for more information). Due to space optimisation reasons, modifications of the database happen in-place
 * a *selection* register, holding a set of sample labels. Labels can be specified on the command line or read from the database present in the database register. Collective operations (selection, deletion, combination, and so on) can be performed on the samples present in the database register according to the set of sample names specified by the selection register, which acts as a guide to enable complex operations on the database. For instance, one might extract from the database all the sample names matching some regular expression and put them in the selection register, add some more sample names to the selection register, and finally delete from the database all the samples whose names do not appear in the selection register.
 
 `KPopTwistDB` has four registers:
-* a *twister* register holding a twister, i.e., an object able to transform *k*-mer spectra to "twisted" embeddings/vectors in an abstract `KPop` space (note that the transformation is dataset-dependent and generated by the user when runnning `KPopTwist` on a set of spectra, as explained in our [bioRxiv preprint](https://www.biorxiv.org/content/10.1101/2022.06.22.497172v2) and [the next section](#32-building-workflows))
+* a *twister* register holding a twister, i.e., an object able to transform *k*-mer spectra to "twisted" embeddings/vectors in an abstract `KPop` space (note that the transformation is dataset-dependent and generated by the user when runnning `KPopTwist` on a set of spectra, as explained in our [Genome Biology paper](https://doi.org/10.1186/s13059-025-03585-8) and [the next section](#32-building-workflows))
 * a *twisted* register holding "twisted" vectors, i.e., `KPop` embeddings of biological sequences into an abstract `KPop` space
-* a *metrics* register holding a metric, i.e., a vector of numbers specifying the relevance of each one of the dimensions of the `KPop` space (see our [bioRxiv preprint](https://www.biorxiv.org/content/10.1101/2022.06.22.497172v2) for more details)
+* a *metrics* register holding a metric, i.e., a vector of numbers specifying the relevance of each one of the dimensions of the `KPop` space (see our [Genome Biology paper](https://doi.org/10.1186/s13059-025-03585-8) for more details)
 * a *distance* register holding a distance matrix between couples of samples. The matrix can be computed between the vectors present in the twisted register and themselves, or between the vectors present in the twisted register and those present in an external file containing twisted vectors.
 
 Options are provided to write content from/to these registers, both in binary and textual form &mdash; the latter can be used, for instance, to import/export data from/to `R`. In addition to input/output to/from registers, both `KPopCountDB` and `KPopTwistDB` are able to read and process external files containing *k*-mer spectra in the format produced by `KPopCount` &mdash; this ensures that new spectra/twisted spectra can be added to their respective databases. A figure showing some of the available data transformations and formats can be found in [the next section](#32-building-workflows).
@@ -513,7 +513,7 @@ They are set immediately.
 
 ## 5. Examples
 
-By using the programs just described, it is possible to implement a number of interesting high-throughput workflows. We illustrate some examples here - for a more general description, please refer to our [bioRxiv preprint](https://www.biorxiv.org/content/10.1101/2022.06.22.497172v2).
+By using the programs just described, it is possible to implement a number of interesting high-throughput workflows. We illustrate some examples here - for a more general description, please refer to our [Genome Biology paper](https://doi.org/10.1186/s13059-025-03585-8).
 
 ### 5.1. Sequence classification
 
@@ -527,7 +527,7 @@ Note that the classifier should be generated according to the data type of the i
 
 #### 5.1.1. Classifier for simulated *M.tuberculosis* sequencing reads
 
-As described in our [bioRxiv preprint](https://www.biorxiv.org/content/10.1101/2022.06.22.497172v2), we simulated sequencing reads for 1,000 *M.tuberculosis* genomes. The data thus generated is large (~127 GB) and hence we are not making it directly available for download. However, the scripts used to (re-)generate it can be found in the [`test`](https://github.com/PaoloRibeca/KPop/tree/main/test) directory of this repository.
+As described in our [Genome Biology paper](https://doi.org/10.1186/s13059-025-03585-8), we simulated sequencing reads for 1,000 *M.tuberculosis* genomes. The data thus generated is large (~127 GB) and hence we are not making it directly available for download. However, the scripts used to (re-)generate it can be found in the [`test`](https://github.com/PaoloRibeca/KPop/tree/main/test) directory of this repository.
 
 ##### 5.1.1.1. Data preparation
 
@@ -686,7 +686,7 @@ This example requires a large sequencing dataset available from the [Short Read 
 
 ##### 5.1.2.1. Data preparation
 
-As described in our [bioRxiv preprint](https://www.biorxiv.org/content/10.1101/2022.06.22.497172v2), one of the advantages offered by `KPop` is its versatility. In particular, by pre-processing reads one can easily have the method focus on particular regions or features of the genome of interest, as shown in the following figure:
+As described in our [Genome Biology paper](https://doi.org/10.1186/s13059-025-03585-8), one of the advantages offered by `KPop` is its versatility. In particular, by pre-processing reads one can easily have the method focus on particular regions or features of the genome of interest, as shown in the following figure:
 
 ![Preprocessing for KPop-based deep-sequencing classifiers](images/KPop-Preprocessing-RR.png)
 
@@ -743,7 +743,7 @@ KPopTwistDB $(ls Test/*.KPopTwisted | awk '{split($0,s,"[.]"); printf " -a t "s[
 ```
 Note that in this example we annotate the name of each test sequence with its class, by adding to it a non-printable character `\001` followed by the class (`KPop` is fine with non-printable characters in labels, provided that they are not `\000`). We'll do the same below for the training sequences below, so as to be able to count the majority class when we use a *k*-NN approach.
 
-As detailed in our [bioRxiv preprint](https://www.biorxiv.org/content/10.1101/2022.06.22.497172v2), for this example we explored three different classifiers. Although they all provide very good performance, these alternative approaches are easy to implement using `KPop` tools and illustrate the versatility of our framework.
+As detailed in our [Genome Biology paper](https://doi.org/10.1186/s13059-025-03585-8), for this example we explored three different classifiers. Although they all provide very good performance, these alternative approaches are easy to implement using `KPop` tools and illustrate the versatility of our framework.
 
 ###### Two-class workflow
 
@@ -1084,7 +1084,7 @@ to, first, annotate the summary with the original "true" classification of the s
 ```
 meaning that, of the 641,847 sequences present in the `Test` set, 611,770 (95.3%) were correctly classified, while 30,077 (4.69%) were not.
 
-Note that, as discussed in more detail in our [bioRxiv preprint](https://www.biorxiv.org/content/10.1101/2022.06.22.497172v2), in this example many classes are actually heterogeneous collections of more than one subtree. One might then wish to consider more sophisticated classification methods, such as random forests or others.
+Note that, as discussed in more detail in our [Genome Biology paper](https://doi.org/10.1186/s13059-025-03585-8), in this example many classes are actually heterogeneous collections of more than one subtree. One might then wish to consider more sophisticated classification methods, such as random forests or others.
 
 ### 5.2. Relatedness engine
 
