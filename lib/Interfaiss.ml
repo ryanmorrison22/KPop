@@ -27,7 +27,8 @@ include (
           | HNSW m -> "hnsw(" ^ string_of_int m ^ ")"
         let of_string_re = Str.regexp "[(,)]"
         let of_string s =
-          let fail kind = Printf.sprintf "(%s): %s index '%s'" __FUNCTION__ kind s |> failwith in
+          let raise kind =
+            BiOCamLib.Better.Exception.raise __FUNCTION__ Initialize (Printf.sprintf "%s index '%s'" kind s) in
           match Str.full_split of_string_re s with
           | [ Text "flat" ] ->
             Flat
@@ -37,9 +38,9 @@ include (
               try
                 int_of_string m, int_of_string bits
               with _ ->
-                fail "Unknown" in
+                raise "Unknown" in
             if m < 1 || bits < 1 then
-              fail "Invalid";
+              raise "Invalid";
             PQ (m, bits)
           | [ Text "hnsw"; Delim "("; Text m; Delim ")" ]
           | [ Text "HNSW"; Delim "("; Text m; Delim ")" ] ->
@@ -47,12 +48,12 @@ include (
               try
                 int_of_string m
               with _ ->
-                fail "Unknown" in
+                raise "Unknown" in
             if m < 0 then
-              fail "Invalid";
+              raise "Invalid";
             HNSW m
           | _ ->
-            fail "Unknown"
+            raise "Unknown"
       end
     type t
     external create: Type.t -> int -> t = "InterfaissCreate"
@@ -78,7 +79,7 @@ include (
           | PQ of int * int
           | HNSW of int
         val to_string: t -> string
-        val of_string: string -> t
+        val of_string: string -> t (* Can fail due to wrong format *)
       end
     type t
     val create: ?index_type:Type.t -> int -> t

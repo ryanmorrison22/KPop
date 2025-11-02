@@ -110,7 +110,7 @@ module Distance:
                 |> Float.Array.map (( *. ) l))
         let of_string_re = Str.regexp "[(,)]"
         let of_string s =
-          let fail kind = Printf.sprintf "(%s): %s metric '%s'" __FUNCTION__ kind s |> failwith in
+          let raise kind = Exception.raise __FUNCTION__ IO_Format (Printf.sprintf "%s metric '%s'" kind s) in
           match Str.full_split of_string_re s with
           | [ Text "flat" ] ->
             Flat
@@ -122,12 +122,12 @@ module Distance:
               try
                 float_of_string power_int, float_of_string threshold, float_of_string power_ext
               with _ ->
-                fail "Invalid" in
+                raise "Invalid" in
             if power_int < 0. || (threshold < 0. || threshold > 1.) || power_ext < 0. then
-              fail "Invalid";
+              raise "Invalid";
             Powers (power_int, threshold, power_ext)
           | _ ->
-            fail "Unknown"
+            raise "Unknown"
         let to_string = function
           | Flat ->
             "flat"

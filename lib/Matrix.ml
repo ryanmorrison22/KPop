@@ -79,7 +79,7 @@ module Base:
         distance metric m =
       let d = Float.Array.length metric in
       if Array.length m.col_names <> d then
-        Incompatible_geometries (Array.make d "", m.col_names) |> raise;
+        Exception.raise_incompatible_geometries __FUNCTION__ (Array.make d "") m.col_names;
       let inv_power =
         match distance with
         | Space.Distance.Euclidean | Cosine | Angle -> 0.5
@@ -191,7 +191,7 @@ module Base:
     let get_distance_rowwise ?(normalize = true) ?(threads = 1) ?(elements_per_step = 10000) ?(verbose = false)
         distance metric m1 m2 =
       if m1.col_names <> m2.col_names then
-        Incompatible_geometries (m1.col_names, m2.col_names) |> raise;
+        Exception.raise_incompatible_geometries __FUNCTION__ m1.col_names m2.col_names;
       let r1 = Array.length m1.row_names and r2 = Array.length m2.row_names in
       (* We compute normalisations *)
       let n1, n2 =
@@ -294,22 +294,22 @@ include (
           | "KPopVectors" -> Vectors
           | "KPopDMatrix" -> DMatrix
           | s ->
-            Printf.sprintf "(%s): Unknown type '%s'" __FUNCTION__ s |> failwith
+            Exception.raise_unrecognized_initializer __FUNCTION__ "archive type" s
       end
     type t = {
       which: Type.t;
       matrix: Base.t
     }
-    let empty which =
-      { which; matrix = Base.empty }
+    let empty which = { which; matrix = Base.empty } (* Immutable *)
     let transpose_single_threaded ?(verbose = false) m =
       { m with matrix = Base.transpose_single_threaded ~verbose m.matrix }
     let transpose ?(threads = 1) ?(elements_per_step = 10000) ?(verbose = false) m =
       { m with matrix = Base.transpose ~threads ~elements_per_step ~verbose m.matrix }
-    exception Incompatible_matrices of Type.t * Type.t
     let merge_rowwise ?(verbose = false) m1 m2 =
       if m1.which <> m2.which then
-        Incompatible_matrices (m1.which, m2.which) |> raise;
+        Exception.raise __FUNCTION__ IO_Format
+          (Printf.sprintf "Incompatible matrix types (found %s, %s)"
+            (Type.to_string m1.which) (Type.to_string m2.which));
       { which = m1.which; matrix = Base.merge_rowwise ~verbose m1.matrix m2.matrix }
     let multiply_matrix_vector_single_threaded ?(verbose = false) m =
       Base.multiply_matrix_vector_single_threaded ~verbose m.matrix
@@ -319,9 +319,6 @@ include (
       Base.multiply_matrix_vector ~threads ~elements_per_step ~verbose m.matrix v
     let multiply_matrix_matrix ?(threads = 1) ?(elements_per_step = 10000) ?(verbose = false) which m1 m2 =
       { which; matrix = Base.multiply_matrix_matrix ~threads ~elements_per_step ~verbose m1.matrix m2.matrix }
-    (* *)
-    let archive_version = "2022-04-03"
-    (* *)
     (* The following function implements automatic file naming *)
     let make_filename_table which = function
       | w when String.length w >= 5 && String.sub w 0 5 = "/dev/" -> w
@@ -331,17 +328,18 @@ include (
       { which; matrix = make_filename_table which prefix |> Base.of_file ~threads ~bytes_per_step ~verbose }
     let to_file ?(precision = 15) ?(threads = 1) ?(elements_per_step = 40000) ?(verbose = false) m prefix =
       make_filename_table m.which prefix |> Base.to_file ~precision ~threads ~elements_per_step ~verbose m.matrix
+    (* *)
+    let archive_version = "2022-04-03"
+    (* *)
     let to_channel output m =
       Type.to_string m.which |> output_value output;
       archive_version |> output_value output;
       output_value output m.matrix
-    exception Incompatible_archive_version of string * string * string
-    exception Unexpected_type of Type.t * Type.t
     let of_channel input =
       let which = (input_value input: string) in
       let version = (input_value input: string) in
       if version <> archive_version then
-        Incompatible_archive_version (which, version, archive_version) |> raise;
+        Exception.raise_incompatible_archive_version __FUNCTION__ version archive_version;
       { which = Type.of_string which; matrix = (input_value input: Base.t) }
   end: sig
     module Type:
@@ -364,7 +362,6 @@ include (
     val transpose_single_threaded: ?verbose:bool -> t -> t
     val transpose: ?threads:int -> ?elements_per_step:int -> ?verbose:bool -> t -> t
     (* Merge two matrices - the type of the two inputs must be the same *)
-    exception Incompatible_matrices of Type.t * Type.t
     val merge_rowwise: ?verbose:bool -> t -> t -> t
     (* TODO: No type checks are performed (yet) when multiplying matrices *)
     val multiply_matrix_vector_single_threaded: ?verbose:bool -> t -> Float.Array.t -> Float.Array.t
@@ -378,8 +375,6 @@ include (
     val to_file: ?precision:int -> ?threads:int -> ?elements_per_step:int -> ?verbose:bool -> t -> string -> unit
     (* Binary marshalling of the matrix *)
     val to_channel: out_channel -> t -> unit
-    exception Incompatible_archive_version of string * string * string
-    exception Unexpected_type of Type.t * Type.t
     val of_channel: in_channel -> t
   end
 )
