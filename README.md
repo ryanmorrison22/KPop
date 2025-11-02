@@ -3,6 +3,11 @@
 
 `KPop` is an assembly-free and scalable method for the comparative analysis of microbial genomes and environmental samples. It is based on full *k*-mer spectra and dataset-specific transformations; it allows to accurately compare hundreds of thousands of assembled, or thousands of unassembled microbial genomes or sequenced samples, in a matter of hours. It provides excellent resolution across a very large number of use cases and applications. More details can be found in our [Genome Biology paper](https://doi.org/10.1186/s13059-025-03585-8).
 
+The `KPop` project gratefully acknowledges funding by several institutions that has allowed its development to continue over several years:
+
+| ![](images/HPRU-GED-Logo.png) | [![](images/NEARDATA-Logo.svg)](https://neardata.eu) | ![](images/RESAS-Logo.jpg) | [![](images/BBSRC-Logo.svg)](https://bbsrc.ac.uk) |
+|-|-|-|-|
+
 ## Table of contents
 
 [0. Installation](#0-installation)<br>
