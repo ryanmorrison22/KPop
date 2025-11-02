@@ -35,12 +35,7 @@ function conditional_echo {
 # We generate and split the plain text table, so that R can import it
 conditional_echo "$(date +"%c"): [1/16] Exporting table..."
 TMPDIR=$(mktemp -d -p . KPopTwist-XXXXXXXXXX)
-KPopCountDB -T "$THREADS" -i "$PREFIX_IN" \
-    --table-output-row-names false -t "${TMPDIR}/TABLE" \
-    -R "~." -D \
-    --counts-output-zero-kmers true \
-    --table-output-row-names true --table-output-metadata false -t /dev/stdout |
-  tail -n +2 > "${TMPDIR}/NAMES.KPopCounter.txt"
+KPopCountDB -T "$THREADS" -i "$PREFIX_IN" --table-output-metadata false -t "${TMPDIR}/TABLE"
 
 export R_DATATABLE_NUM_PROCS_PERCENT=100
 #export R_DATATABLE_THROTTLE=1000000
@@ -51,28 +46,29 @@ cat <<'_____'
   library(ca)
   #
   args<-commandArgs(trailingOnly=TRUE)
-  output<-args[3]
-  output_kmers<-args[4]
-  keep<-args[5]
-  if (is.na(args[6])||args[6]=="")
-    args[6]<-"1."
-  fraction<-as.numeric(args[6])
-  threshold<-as.numeric(args[7])
-  threads<-as.integer(args[8]) # Not really used at the moment
-  temporaries<-as.logical(args[9]) # Not really used at the moment
-  verbose<-as.logical(args[10])
+  output<-args[2]
+  output_kmers<-args[3]
+  keep<-args[4]
+  if (is.na(args[5])||args[5]=="")
+    args[5]<-"1."
+  fraction<-as.numeric(args[5])
+  threshold<-as.numeric(args[6])
+  threads<-as.integer(args[7]) # Not really used at the moment
+  temporaries<-as.logical(args[8]) # Not really used at the moment
+  verbose<-as.logical(args[9])
   #
   conditional_echo<-function(s){
     if (verbose)
       cat(format(Sys.time(),paste0("%c: ",s,"...\n")))
   }
-  conditional_echo("[2/16] Reading k-mers")
-  kmers<-t(data.table::fread(args[2],sep="\t",header=FALSE)) # Why t() would work so much better here is anybody's guess
-  conditional_echo("[3/16] Reading counts")
+  conditional_echo("[2/16] Reading table")
   stuff<-data.table::fread(args[1],sep="\t",header=TRUE)
+  conditional_echo("[3/16] Splitting table")
+  kmers<-as.vector(stuff[,1])$V1
+  stuff<-stuff[,-1]
   conditional_echo("[4/16] Discarding k-mers")
   if (keep!="") {
-    idx_kmers<-1:ncol(kmers)
+    idx_kmers<-1:length(kmers)
     names(idx_kmers)<-kmers
     keep<-t(data.table::fread(keep,sep="\t",header=FALSE))
     kmers<-keep
@@ -113,7 +109,7 @@ cat <<'_____'
   conditional_echo("[13/16] Writing twister")
   data.table::fwrite(twister,paste0(output,".KPopTwister.txt"),row.names=TRUE,quote=TRUE,sep="\t",buffMB=64)
 _____
-) "${TMPDIR}/TABLE.KPopCounter.txt" "${TMPDIR}/NAMES.KPopCounter.txt" \
+) "${TMPDIR}/TABLE.KPopCounter.txt" \
   "$PREFIX_OUT" "$PREFIX_OUT_KMERS" "$KMERS_KEEP" "$KMERS_SAMPLE" "$THRESHOLD_KMERS" \
   "$THREADS" "$TEMPORARIES" "$VERBOSE" 2> "${TMPDIR}/LOGGO.txt"
 
@@ -127,7 +123,7 @@ conditional_echo "$(date +"%c"): [15/16] Encoding twister..."
 KPopTwistDB -T "$THREADS" -I T "$PREFIX_OUT" -o T "$PREFIX_OUT" > "${TMPDIR}/LOGGO.txt" 2>&1
 conditional_echo "$(date +"%c"): [16/16] Cleaning up..."
 if [[ "$TEMPORARIES" == "false" ]]; then
-  rm "${TMPDIR}/TABLE.KPopCounter.txt" "${TMPDIR}/NAMES.KPopCounter.txt" "${TMPDIR}/LOGGO.txt"
+  rm "${TMPDIR}/TABLE.KPopCounter.txt" "${TMPDIR}/LOGGO.txt"
   rmdir "${TMPDIR}"
   rm "${PREFIX_OUT}.KPopTwisted.txt" "${PREFIX_OUT}.KPopInertia.txt" "${PREFIX_OUT}.KPopTwister.txt"
   if [[ "$PREFIX_OUT_KMERS" != "" ]]; then
