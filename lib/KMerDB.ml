@@ -123,8 +123,11 @@ include (
           | Power of float
           | CLR
           | Pseudo of float * bool
+        let raise __FUNCTION__ kind s =
+          Exception.raise __FUNCTION__ IO_Format (Printf.sprintf "%s transformation '%s'" kind s)
         let of_string_re = Str.regexp "[(,)]"
         let of_string s =
+          let raise kind = raise __FUNCTION__ kind s in
           try
             match Str.full_split of_string_re s with
             | [ Text "threshold"; Delim "("; Text threshold; Delim ")" ] ->
@@ -141,12 +144,12 @@ include (
               let power = float_of_string power in
               let res = Pseudo (power, bool_of_string quantize) in
               if power < 0. then
-                Printf.sprintf "(%s): Invalid transformation '%s'" __FUNCTION__ s |> failwith;
+                raise "Invalid";
               res
             | _ ->
-              raise Not_found
+              raise "Unknown"
           with _ ->
-            Printf.sprintf "(%s): Unknown transformation '%s'" __FUNCTION__ s |> failwith
+            raise "Unknown"
         let to_string = function
           | Threshold threshold ->
             Printf.sprintf "threshold(%g)" threshold
@@ -176,7 +179,7 @@ include (
             (float_of_int col_stats.max +. 1.) *. log (counts +. 1.)
           | Pseudo (power, quantize) ->
             if power < 0. then
-              to_string which |> Printf.sprintf "(%s): Invalid transformation '%s'" __FUNCTION__ |> failwith;
+              to_string which |> raise __FUNCTION__ "Invalid";
             let v =
               if power = 0. then
                 (float_of_int col_stats.max +. 1.) *. log (counts +. 1.)
@@ -319,11 +322,12 @@ include (
             Printf.eprintf " '%s'" s)
         db.core.idx_to_meta_names;
       Printf.eprintf "\n%!"
-    (* Utility functions *)
+    (*  Utility functions  *)
     let invert_table a =
       let res = StringHashtbl.create (Array.length a) in
       Array.iteri (fun i name -> StringHashtbl.add res name i) a;
       res
+    (* Makes space for a new sample named label *)
     let add_empty_column_if_needed db label =
       let n_cols = !db.core.n_cols in
       let aug_n_cols = n_cols + 1 in
@@ -341,49 +345,27 @@ include (
           }
         }
       end
-    (* *)
-    let archive_version = "2025-10-20"
-    (* *)
-    let make_filename_binary = function
-      | w when String.length w >= 5 && String.sub w 0 5 = "/dev/" -> w
-      | prefix -> prefix ^ ".KPopCounter"
-    exception Incompatible_archive_version of string * string
-    let to_binary ?(verbose = false) db prefix =
-      let fname = make_filename_binary prefix in
-      let output = open_out fname in
-      if verbose then
-        Printf.eprintf "(%s): Outputting DB to file '%s'...%!" __FUNCTION__ fname;
-      output_value output "KPopCounter";
-      output_value output archive_version;
-      output_value output {
-        db.core with
-        (* We have to truncate all the containers *)
-        idx_to_col_names = String.resize_array ~is_buffer:false db.core.n_cols db.core.idx_to_col_names;
-        idx_to_row_names = String.resize_array ~is_buffer:false db.core.n_rows db.core.idx_to_row_names;
-        idx_to_meta_names = String.resize_array ~is_buffer:false db.core.n_meta db.core.idx_to_meta_names;
-        meta = String.resize_array_array ~is_buffer:false db.core.n_cols db.core.n_meta db.core.meta;
-        storage = CountBAVector.resize_array ~is_buffer:false db.core.n_cols db.core.n_rows db.core.storage
-      };
-      close_out output;
-      if verbose then
-        Printf.eprintf " done.\n%!"
-    let of_binary ?(verbose = false) prefix =
-      let fname = make_filename_binary prefix in
-      let input = open_in fname in
-      if verbose then
-        Printf.eprintf "(%s): Reading DB from file '%s'...%!" __FUNCTION__ fname;
-      let which = (input_value input: string) in
-      let version = (input_value input: string) in
-      if which <> "KPopCounter" || version <> archive_version then
-        Incompatible_archive_version (which, version) |> raise;
-      let core = (input_value input: marshalled_t) in
-      close_in input;
-      if verbose then
-        Printf.eprintf " done.\n%!";
-      { core = core;
-        col_names_to_idx = invert_table core.idx_to_col_names;
-        row_names_to_idx = invert_table core.idx_to_row_names;
-        meta_names_to_idx = invert_table core.idx_to_meta_names }
+    (* Makes space for a new k-mer named hash *)
+    let add_empty_row_if_needed db hash =
+      if StringHashtbl.mem !db.row_names_to_idx hash |> not then begin
+        let n_rows = !db.core.n_rows in
+        let aug_n_rows = n_rows + 1 in
+        StringHashtbl.add !db.row_names_to_idx hash n_rows; (* THIS ONE CHANGES !db *)
+        db := {
+          !db with
+          core = {
+            !db.core with
+            n_rows = aug_n_rows;
+            (* We have to resize all the relevant containers *)
+            idx_to_row_names = begin
+              let res = String.resize_array ~is_buffer:true aug_n_rows !db.core.idx_to_row_names in
+              res.(n_rows) <- hash;
+              res
+            end;
+            storage = CountBAVector.resize_array ~is_buffer:true !db.core.n_cols aug_n_rows !db.core.storage
+          }
+        }
+      end
     (* *)
     exception Wrong_number_of_columns of int * int * int
     let add_meta ?(verbose = false) db fname =
@@ -455,8 +437,24 @@ include (
             String.TermIO.clear __FUNCTION__ fname !line_num
       end;
       !db
+    let add_counts db label hash counts =
+      let db = ref db in
+      add_empty_column_if_needed db label;
+      add_empty_row_if_needed db hash;
+      let col_idx = StringHashtbl.find !db.col_names_to_idx label
+      and row_idx = StringHashtbl.find !db.row_names_to_idx hash in
+      CountBAVector.(!db.core.storage.(col_idx).+(row_idx) <- N.of_int counts);
+      !db
+    let merge ?(verbose = false) db_1 db_2 =
+      (*let area_1 = db_1.core.n_cols*)
+
+
+      (* It's OK to merge DBs with different k-mer sets, but they must have identical metadata rows *)
+
+
+      ()
+
     exception Header_expected of string
-    exception Wrong_format of int * string
     (* Here we cannot easily parallelise because of DB memory management *)
     let add_files ?(verbose = false) db prefixes =
       let db = ref db and n = List.length prefixes and num_spectra = ref (-1) in
@@ -479,6 +477,7 @@ include (
               if line.(0) = "" then begin
                 (* Header *)
                 let label = Matrix.Base.strip_external_quotes_and_check line.(1) in
+                (* We make sure memory has been allocated for this sample *)
                 add_empty_column_if_needed db label;
                 col_idx := StringHashtbl.find !db.col_names_to_idx label;
                 incr num_spectra;
@@ -489,31 +488,14 @@ include (
                     !line_num (String.pluralize_int "line" !line_num)
               end else begin
                 (* A regular line. The first element is the hash, the second one the count *)
-                if StringHashtbl.mem !db.row_names_to_idx line.(0) |> not then begin
-                  let n_rows = !db.core.n_rows in
-                  let aug_n_rows = n_rows + 1 in
-                  StringHashtbl.add !db.row_names_to_idx line.(0) n_rows;
-                  db := {
-                    !db with
-                    core = {
-                      !db.core with
-                      n_rows = aug_n_rows;
-                      (* We have to resize all the relevant containers *)
-                      idx_to_row_names = begin
-                        let res = String.resize_array ~is_buffer:true aug_n_rows !db.core.idx_to_row_names in
-                        res.(n_rows) <- line.(0);
-                        res
-                      end;
-                      storage = CountBAVector.resize_array ~is_buffer:true !db.core.n_cols aug_n_rows !db.core.storage
-                    }
-                  }
-                end;
+                add_empty_row_if_needed db line.(0);
                 let row_idx = StringHashtbl.find !db.row_names_to_idx line.(0) in
                 let v =
                   try
                     CountBAVector.N.of_string line.(1)
                   with _ ->
-                    Wrong_format (!line_num, line.(1)) |> raise in
+                    Exception.raise __FUNCTION__ IO_Format
+                      (Printf.sprintf "On line %d: Number expected, found '%s'" !line_num line.(1)) in
                 (* If there are repeated k-mers, we just accumulate them *)
                 !db.core.storage.(!col_idx).CountBAVector.+(row_idx) <- v
               end
@@ -574,7 +556,7 @@ include (
           | "mean" -> RescaledMean
           | "median" -> RescaledMedian
           | s ->
-            Printf.sprintf "(%s): Unknown criterion '%s'" __FUNCTION__ s |> failwith
+            Exception.raise_unrecognized_initializer __FUNCTION__ "Combination criterion" s
         let to_string = function
           | RescaledMean -> "mean"
           | RescaledMedian -> "median"
@@ -921,31 +903,6 @@ include (
         }
       } in
       Matrix.to_file ~threads (Matrix.transpose ~threads summary) summary_prefix
-    (* *)
-    module TableFilter =
-      struct
-        type t = {
-          print_row_names: bool;
-          print_col_names: bool;
-          print_metadata: bool;
-          transpose: bool;
-          print_zero_rows: bool;
-          filter_columns: StringSet.t;
-          precision: int
-        }
-        let default = {
-          print_row_names = true;
-          print_col_names = true;
-          print_metadata = false;
-          transpose = false;
-          print_zero_rows = false;
-          filter_columns = StringSet.empty;
-          precision = 15
-        }
-      end
-    let make_filename_table = function
-      | w when String.length w >= 5 && String.sub w 0 5 = "/dev/" -> w
-      | prefix -> prefix ^ ".KPopCounter.txt"
     let transform ?(threads = 1) ?(elements_per_step = 40000) ?(verbose = false) transformation db =
       let transform = Transformation.compute ~which:transformation
       and stats = stats_table_of_core_db ~threads ~verbose db.core
@@ -989,228 +946,6 @@ include (
           String.TermIO.clear __FUNCTION__ n_cols n_cols
           (String.pluralize_int "column" n_cols);
       { db with core = { db.core with storage = new_storage } }
-    let to_table
-        ?(filter = TableFilter.default) ?(threads = 1) ?(elements_per_step = 40000) ?(verbose = false) db prefix =
-      let stats = stats_table_of_core_db ~threads ~verbose db.core
-      and fname = make_filename_table prefix in
-      let output = open_out fname and meta = ref [] and rows = ref [] and cols = ref [] in
-      (* We determine which rows and colunms should be output after all filters have been applied *)
-      (*  Rows: metadata and k-mers *)
-      if filter.print_metadata then
-        Array.iteri
-          (fun i meta_name ->
-            (* There might be additional storage *)
-            if i < db.core.n_meta then
-              List.accum meta (meta_name, i))
-          db.core.idx_to_meta_names;
-      Array.iteri
-        (fun i row_name ->
-          (* There might be additional storage.
-             Also, we only print the row if it has non-zero elements or if we are explicitly requested to do so *)
-          if i < db.core.n_rows && (stats.row_stats.(i).sum > 0. || filter.print_zero_rows) then
-            List.accum rows (row_name, i))
-        db.core.idx_to_row_names;
-      (* Columns *)
-      Array.iteri
-        (fun i col_name ->
-          (* There might be additional storage, or we might need to remove some columns *)
-          if i < db.core.n_cols && StringSet.mem col_name filter.filter_columns |> not then
-            List.accum cols (col_name, i))
-        db.core.idx_to_col_names;
-      let meta = Array.of_rlist !meta and rows = Array.of_rlist !rows and cols = Array.of_rlist !cols in
-      let n_rows = Array.length rows and n_cols = Array.length cols in
-      (* There must be at least one row to print.
-         If there are no columns, we just print metadata/row names  *)
-      if (Array.length meta + n_rows) > 0 then begin
-        if filter.transpose then begin
-          if filter.print_col_names then begin
-            (* We print row names - there is always at least one row *)
-            let first_done = ref false in
-            Array.iter
-              (fun (meta_name, _) ->
-                Printf.fprintf output "%s%s" (if !first_done || filter.print_row_names then "\t" else "") meta_name;
-                first_done := true)
-              meta;
-            Array.iter
-              (fun (row_name, _) ->
-                Printf.fprintf output "%s%s" (if !first_done || filter.print_row_names then "\t" else "") row_name;
-                first_done := true)
-              rows;
-            Printf.fprintf output "\n"
-          end;
-          Printf.fprintf output "%!";
-          let processed_cols = ref 0 and buf = Buffer.create 1048576 in
-          Processes.Parallel.process_stream_chunkwise
-            (fun () ->
-              if !processed_cols < n_cols then
-                let to_do = max 1 (elements_per_step / n_rows) |> min (n_cols - !processed_cols) in
-                let new_processed_cols = !processed_cols + to_do in
-                let res = !processed_cols, new_processed_cols - 1 in
-                processed_cols := new_processed_cols;
-                res
-              else
-                raise End_of_file)
-            (fun (lo_col, hi_col) ->
-              Buffer.clear buf;
-              for i = lo_col to hi_col do
-                let col_name, col_idx = cols.(i) in
-                if filter.print_row_names then
-                  Printf.bprintf buf "%s" col_name;
-                let first_done = ref false in
-                Array.iter
-                  (fun (_, meta_idx) ->
-                    Printf.bprintf buf "%s%s"
-                      (if !first_done || filter.print_row_names then "\t" else "") db.core.meta.(col_idx).(meta_idx);
-                    first_done := true)
-                  meta;
-                Array.iter
-                  (fun (_, row_idx) ->
-                    Printf.bprintf buf "%s%.*g"
-                      (if !first_done || filter.print_row_names then "\t" else "") filter.precision
-                      db.core.storage.(col_idx).@(row_idx);
-                    first_done := true)
-                  rows;
-                Printf.bprintf buf "\n"
-              done;
-              hi_col - lo_col + 1, Buffer.contents buf)
-            (fun (n_processed, block) ->
-              Printf.fprintf output "%s" block;
-              let old_processed_cols = !processed_cols in
-              processed_cols := !processed_cols + n_processed;
-              if verbose && !processed_cols / 2 > old_processed_cols / 2 then (* We write one column at the time *)
-                Printf.eprintf "%s\r(%s): Writing table to file '%s': done %d/%d lines%!"
-                  String.TermIO.clear __FUNCTION__ fname !processed_cols n_cols)
-            threads
-        end else begin
-          if filter.print_col_names then begin
-            (* We print column names *)
-            Array.iteri
-              (fun i (col_name, _) ->
-                Printf.fprintf output "%s%s" (if i > 0 || filter.print_row_names then "\t" else "") col_name)
-              cols;
-            Printf.fprintf output "\n"
-          end;
-          (* We print metadata as lines *)
-          Array.iter
-            (fun (meta_name, meta_idx) ->
-              if filter.print_row_names then
-                Printf.fprintf output "%s" meta_name;
-              Array.iteri
-                (fun i (_, col_idx) ->
-                  Printf.fprintf output "%s%s"
-                    (if i > 0 || filter.print_row_names then "\t" else "") db.core.meta.(col_idx).(meta_idx))
-                cols;
-              Printf.fprintf output "\n")
-            meta;
-          Printf.fprintf output "%!";
-          let processed_rows = ref 0 and buf = Buffer.create 1048576 in
-          Processes.Parallel.process_stream_chunkwise
-            (fun () ->
-              if !processed_rows < n_rows then
-                let to_do = max 1 (elements_per_step / (max 1 n_cols)) |> min (n_rows - !processed_rows) in
-                let new_processed_rows = !processed_rows + to_do in
-                let res = !processed_rows, new_processed_rows - 1 in
-                processed_rows := new_processed_rows;
-                res
-              else
-                raise End_of_file)
-            (fun (lo_row, hi_row) ->
-              Buffer.clear buf;
-              for i = lo_row to hi_row do
-                let row_name, row_idx = rows.(i) in
-                if filter.print_row_names then
-                  Printf.bprintf buf "%s" row_name;
-                Array.iteri
-                  (fun i (_, col_idx) ->
-                    Printf.bprintf buf "%s%.*g"
-                      (if i > 0 || filter.print_row_names then "\t" else "") filter.precision
-                      db.core.storage.(col_idx).@(row_idx))
-                  cols;
-                Printf.bprintf buf "\n"
-              done;
-              hi_row - lo_row + 1, Buffer.contents buf)
-            (fun (n_processed, block) ->
-              Printf.fprintf output "%s" block;
-              let old_processed_rows = !processed_rows in
-              processed_rows := !processed_rows + n_processed;
-              if verbose && !processed_rows / 10000 > old_processed_rows / 10000 then
-                Printf.eprintf "%s\r(%s): Writing table to file '%s': done %d/%d lines%!"
-                  String.TermIO.clear __FUNCTION__ fname !processed_rows n_rows)
-            threads
-        end;
-        let n_done =
-          if filter.transpose then
-            n_cols
-          else
-            n_rows in
-        if verbose then
-          Printf.eprintf "%s\r(%s): Writing table to file '%s': done %d/%d lines.\n%!"
-            String.TermIO.clear __FUNCTION__ fname n_done n_done
-      end;
-      close_out output
-    let to_spectra
-        ?(filter = TableFilter.default) ?(threads = 1) ?(elements_per_step = 40000) ?(verbose = false) db prefix =
-      let stats = stats_table_of_core_db ~threads ~verbose db.core
-      and fname = Spectra.make_filename prefix in
-      let output = open_out fname and rows = ref [] and cols = ref [] in
-      (* We determine which rows and colunms should be output after all filters have been applied *)
-      (*  Rows: k-mers *)
-      Array.iteri
-        (fun i row_name ->
-          (* There might be additional storage.
-            Also, we only print the row if it has non-zero elements or if we are explicitly requested to do so *)
-          if i < db.core.n_rows && (stats.row_stats.(i).sum > 0. || filter.print_zero_rows) then
-            List.accum rows (row_name, i))
-        db.core.idx_to_row_names;
-      (* Columns *)
-      Array.iteri
-        (fun i col_name ->
-          (* There might be additional storage, or we might need to remove some columns *)
-          if i < db.core.n_cols && StringSet.mem col_name filter.filter_columns |> not then
-            List.accum cols (col_name, i))
-        db.core.idx_to_col_names;
-      let rows = Array.of_rlist !rows and cols = Array.of_rlist !cols in
-      let n_rows = Array.length rows and n_cols = Array.length cols in
-      (* There must be at least one column to print.
-         If there are no rows, we just print column names  *)
-      if n_cols > 0 then begin
-        let processed_cols = ref 0 and buf = Buffer.create 1048576 in
-        Processes.Parallel.process_stream_chunkwise
-          (fun () ->
-            if !processed_cols < n_cols then
-              let to_do = max 1 (elements_per_step / n_rows) |> min (n_cols - !processed_cols) in
-              let new_processed_cols = !processed_cols + to_do in
-              let res = !processed_cols, new_processed_cols - 1 in
-              processed_cols := new_processed_cols;
-              res
-            else
-              raise End_of_file)
-          (fun (lo_col, hi_col) ->
-            Buffer.clear buf;
-            for i = lo_col to hi_col do
-              let col_name, col_idx = cols.(i) in
-              Printf.bprintf buf "\t%s\n" col_name;
-              Array.iter
-                (fun (row_name, row_idx) ->
-                  let value = db.core.storage.(col_idx).@(row_idx) in
-                  if value > 0. then
-                    Printf.bprintf buf "%s\t%.*g\n" row_name filter.precision value)
-                rows
-            done;
-            hi_col - lo_col + 1, Buffer.contents buf)
-          (fun (n_processed, block) ->
-            Printf.fprintf output "%s" block;
-            let old_processed_cols = !processed_cols in
-            processed_cols := !processed_cols + n_processed;
-            if verbose && !processed_cols / 2 > old_processed_cols / 2 then (* We write one column at the time *)
-              Printf.eprintf "%s\r(%s): Writing spectra to file '%s': done %d/%d spectra%!"
-                String.TermIO.clear __FUNCTION__ fname !processed_cols n_cols)
-          threads;
-        if verbose then
-          Printf.eprintf "%s\r(%s): Writing spectra to file '%s': done %d/%d spectra.\n%!"
-            String.TermIO.clear __FUNCTION__ fname n_cols n_cols
-      end;
-      close_out output
     let to_distances
         ?(precision = 15) ?(normalise = true) ?(threads = 1) ?(elements_per_step = 100) ?(verbose = false)
         distance db selection_1 selection_2 prefix =
@@ -1253,6 +988,145 @@ include (
         matrix =
           Matrix.Base.get_distance_rowwise ~threads ~elements_per_step ~verbose distance metric matrix_1 matrix_2
       } prefix
+    (* *)
+    let make_filename_table = function
+      | w when String.length w >= 5 && String.sub w 0 5 = "/dev/" -> w
+      | prefix -> prefix ^ ".KPopCounter.txt"
+    let to_files ?(precision = 15) ?(output_zero_rows = false)
+                 ?(threads = 1) ?(elements_per_step = 40000) ?(verbose = false) db prefix =
+      let stats = stats_table_of_core_db ~threads ~verbose db.core
+      and fname = make_filename_table prefix in
+      let output = open_out fname and meta = ref [] and rows = ref [] and cols = ref [] in
+      (* We determine which rows and colunms should be output after all filters have been applied *)
+      (*  Rows: metadata and k-mers *)
+      Array.iteri
+        (fun i meta_name ->
+          (* There might be additional storage *)
+          if i < db.core.n_meta then
+            List.accum meta (meta_name, i))
+        db.core.idx_to_meta_names;
+      Array.iteri
+        (fun i row_name ->
+          (* There might be additional storage.
+             Also, we only print the row if it has non-zero elements or if we are explicitly requested to do so *)
+          if i < db.core.n_rows && (stats.row_stats.(i).sum > 0. || output_zero_rows) then
+            List.accum rows (row_name, i))
+        db.core.idx_to_row_names;
+      (*  Columns *)
+      Array.iteri
+        (fun i col_name ->
+          (* There might be additional storage *)
+          if i < db.core.n_cols then
+            List.accum cols (col_name, i))
+        db.core.idx_to_col_names;
+      let meta = Array.of_rlist !meta and rows = Array.of_rlist !rows and cols = Array.of_rlist !cols in
+      let n_rows = Array.length rows and n_cols = Array.length cols in
+      (* There must be at least one row to print.
+         If there are no columns, we just print metadata/row names  *)
+      if (Array.length meta + n_rows) > 0 then begin
+        (* We print column names *)
+        Array.iter
+          (fun (col_name, _) -> Printf.fprintf output "\t%s" col_name)
+          cols;
+        Printf.fprintf output "\n";
+        (* We print metadata as lines *)
+        Array.iter
+          (fun (meta_name, meta_idx) ->
+            Printf.fprintf output "%s" meta_name;
+            Array.iter
+              (fun (_, col_idx) -> Printf.fprintf output "\t%s" db.core.meta.(col_idx).(meta_idx))
+              cols;
+            Printf.fprintf output "\n")
+          meta;
+        Printf.fprintf output "%!";
+        let processed_rows = ref 0 and buf = Buffer.create 1048576 in
+        Processes.Parallel.process_stream_chunkwise
+          (fun () ->
+            if !processed_rows < n_rows then
+              let to_do = max 1 (elements_per_step / (max 1 n_cols)) |> min (n_rows - !processed_rows) in
+              let new_processed_rows = !processed_rows + to_do in
+              let res = !processed_rows, new_processed_rows - 1 in
+              processed_rows := new_processed_rows;
+              res
+            else
+              raise End_of_file)
+          (fun (lo_row, hi_row) ->
+            Buffer.clear buf;
+            for i = lo_row to hi_row do
+              let row_name, row_idx = rows.(i) in
+              Printf.bprintf buf "%s" row_name;
+              Array.iter
+                (fun (_, col_idx) ->
+                  Printf.bprintf buf "\t%.*g" precision db.core.storage.(col_idx).@(row_idx))
+                cols;
+              Printf.bprintf buf "\n"
+            done;
+            hi_row - lo_row + 1, Buffer.contents buf)
+          (fun (n_processed, block) ->
+            Printf.fprintf output "%s" block;
+            let old_processed_rows = !processed_rows in
+            processed_rows := !processed_rows + n_processed;
+            if verbose && !processed_rows / 10000 > old_processed_rows / 10000 then
+              Printf.eprintf "%s\r(%s): Writing table to file '%s': done %d/%d lines%!"
+                String.TermIO.clear __FUNCTION__ fname !processed_rows n_rows)
+          threads;
+        if verbose then
+          Printf.eprintf "%s\r(%s): Writing table to file '%s': done %d/%d lines.\n%!"
+            String.TermIO.clear __FUNCTION__ fname n_rows n_rows
+      end;
+      close_out output
+    let of_files ?(threads = 1) ?(bytes_per_step = 4194304) ?(verbose = false) prefix =
+
+
+      make_empty ()
+
+
+    (* *)
+    let archive_version = "2025-10-20"
+    (* *)
+    let make_filename_binary = function
+      | w when String.length w >= 5 && String.sub w 0 5 = "/dev/" -> w
+      | prefix -> prefix ^ ".KPopCounter"
+    let to_binary ?(verbose = false) db prefix =
+      let fname = make_filename_binary prefix in
+      let output = open_out fname in
+      if verbose then
+        Printf.eprintf "(%s): Outputting DB to file '%s'...%!" __FUNCTION__ fname;
+      output_value output "KPopCounter";
+      output_value output archive_version;
+      output_value output {
+        db.core with
+        (* We have to truncate all the containers *)
+        idx_to_col_names = String.resize_array ~is_buffer:false db.core.n_cols db.core.idx_to_col_names;
+        idx_to_row_names = String.resize_array ~is_buffer:false db.core.n_rows db.core.idx_to_row_names;
+        idx_to_meta_names = String.resize_array ~is_buffer:false db.core.n_meta db.core.idx_to_meta_names;
+        meta = String.resize_array_array ~is_buffer:false db.core.n_cols db.core.n_meta db.core.meta;
+        storage = CountBAVector.resize_array ~is_buffer:false db.core.n_cols db.core.n_rows db.core.storage
+      };
+      close_out output;
+      if verbose then
+        Printf.eprintf " done.\n%!"
+    let of_binary ?(verbose = false) prefix =
+      let fname = make_filename_binary prefix in
+      let input = open_in fname in
+      if verbose then
+        Printf.eprintf "(%s): Reading DB from file '%s'...%!" __FUNCTION__ fname;
+      let which = (input_value input: string) in
+      let version = (input_value input: string) in
+      if which <> "KPopCounter" then
+        Exception.raise __FUNCTION__ IO_Format
+          (Printf.sprintf "Unexpected archive type (found '%s', expected 'KPopCounter')" which);
+      if version <> archive_version then
+        (* We are kind of misusing this function here *)
+        Exception.raise_incompatible_archive_version __FUNCTION__ version archive_version;
+      let core = (input_value input: marshalled_t) in
+      close_in input;
+      if verbose then
+        Printf.eprintf " done.\n%!";
+      { core = core;
+        col_names_to_idx = invert_table core.idx_to_col_names;
+        row_names_to_idx = invert_table core.idx_to_row_names;
+        meta_names_to_idx = invert_table core.idx_to_meta_names }
   end: sig
     module Spectra:
       sig
@@ -1310,15 +1184,20 @@ include (
       meta_names_to_idx: int StringHashtbl.t (* Metadata fields *)
     }
     val make_empty: unit -> t
-    (* Adds metadata - the first field must be the label *)
-    exception Wrong_number_of_columns of int * int * int
-    val add_meta: ?verbose:bool -> t -> string -> t
-    (* Adds text files containing k-mers. The first line must contain the label.
+    (* Increase the counts for the specified sample and k-mer by the given amount *)
+    val add_counts: t -> string -> string -> int -> t
+
+
+    (* Add text files containing k-mers. The first line must contain the label.
        Multiple files separated by "\t\n" can be chained in the same input *)
     exception Header_expected of string
-    exception Wrong_format of int * string
-    (* Add files contaning k-mers. Multiple files can be chained *)
     val add_files: ?verbose:bool -> t -> string list -> t
+
+    (* Add metadata - the first field must be the label *)
+    exception Wrong_number_of_columns of int * int * int
+    val add_meta: ?verbose:bool -> t -> string -> t
+
+
     (* Select column names identified by regexps on metadata fields *)
     val selected_from_regexps: ?verbose:bool -> t -> (string * Str.regexp) list -> StringSet.t
     val selected_negate: t -> StringSet.t -> StringSet.t
@@ -1342,37 +1221,21 @@ include (
     exception Classes_label_not_found of string
     exception Invalid_number_of_classes of int
     val distill_kmers: ?threads:int -> ?elements_per_step:int -> ?verbose:bool -> t -> string -> string -> unit
-    (* Output information about the contents *)
-    val output_summary: ?verbose:bool -> t -> unit
-    (* Binary marshalling of the database *)
-    exception Incompatible_archive_version of string * string
-    val to_binary: ?verbose:bool -> t -> string -> unit
-    val of_binary: ?verbose:bool -> string -> t
-    module TableFilter:
-      sig
-        type t = {
-          print_row_names: bool;
-          print_col_names: bool;
-          print_metadata: bool;
-          transpose: bool;
-          print_zero_rows: bool;
-          filter_columns: StringSet.t;
-          precision: int
-        }
-        val default: t
-      end
     (* Transformations *)
     val transform: ?threads:int -> ?elements_per_step:int -> ?verbose:bool ->
                    Transformation.t -> t -> t
-    (* Readable output *)
-    val to_table: ?filter:TableFilter.t -> ?threads:int -> ?elements_per_step:int -> ?verbose:bool ->
-                  t -> string -> unit
-    (* Spectral output *)
-    val to_spectra: ?filter:TableFilter.t -> ?threads:int -> ?elements_per_step:int -> ?verbose:bool ->
-                    t -> string -> unit
     (* Spectral distance matrix *)
     val to_distances: ?precision:int -> ?normalise:bool -> ?threads:int -> ?elements_per_step:int -> ?verbose:bool ->
                       Space.Distance.t -> t -> StringSet.t -> StringSet.t -> string -> unit
+    (* Output information about the contents *)
+    val output_summary: ?verbose:bool -> t -> unit
+    (* *)
+    val to_files: ?precision:int -> ?output_zero_rows:bool ->
+                  ?threads:int -> ?elements_per_step:int -> ?verbose:bool ->
+                  t -> string -> unit
+    val of_files: ?threads:int -> ?bytes_per_step:int -> ?verbose:bool -> string -> t
+    val to_binary: ?verbose:bool -> t -> string -> unit
+    val of_binary: ?verbose:bool -> string -> t (* Can fail due to archive version *)
   end
 )
 

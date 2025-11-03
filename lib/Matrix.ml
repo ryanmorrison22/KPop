@@ -300,6 +300,14 @@ include (
       which: Type.t;
       matrix: Base.t
     }
+    module Exception =
+      struct
+        include Base.Exception
+        let raise_unexpected_type __FUNCTION__ expected found =
+          Exception.raise __FUNCTION__ IO_Format
+            (Printf.sprintf "Unexpected matrix types (expected %s, found %s)"
+              (Type.to_string expected) (Type.to_string found))
+      end
     let empty which = { which; matrix = Base.empty } (* Immutable *)
     let transpose_single_threaded ?(verbose = false) m =
       { m with matrix = Base.transpose_single_threaded ~verbose m.matrix }
@@ -336,11 +344,11 @@ include (
       archive_version |> output_value output;
       output_value output m.matrix
     let of_channel input =
-      let which = (input_value input: string) in
+      let which = Type.of_string (input_value input: string) in
       let version = (input_value input: string) in
       if version <> archive_version then
         Exception.raise_incompatible_archive_version __FUNCTION__ version archive_version;
-      { which = Type.of_string which; matrix = (input_value input: Base.t) }
+      { which; matrix = (input_value input: Base.t) }
   end: sig
     module Type:
       sig
@@ -358,6 +366,11 @@ include (
       which: Type.t;
       matrix: Base.t
     }
+    module Exception:
+      sig
+        include module type of Base.Exception
+        val raise_unexpected_type: string -> Type.t -> Type.t -> unit
+      end
     val empty: Type.t -> t
     val transpose_single_threaded: ?verbose:bool -> t -> t
     val transpose: ?threads:int -> ?elements_per_step:int -> ?verbose:bool -> t -> t

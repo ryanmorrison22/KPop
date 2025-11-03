@@ -20,7 +20,6 @@ open KPop
 module CoverageFromName =
   struct
     let regexp = Str.regexp "[+-]?\\(\\([0-9]+[.]?[0-9]*\\)\\|\\([.][0-9]+\\)\\)\\([eE][-+]?[0-9]+\\)?"
-    exception Invalid_field of int * int
     (* Field number is 1-based! *)
     let extract n_field s =
       let numbers =
@@ -36,7 +35,7 @@ module CoverageFromName =
           assert false in
       let n = Array.length numbers in
       if n_field > n then
-        Invalid_field (n_field, n) |> raise
+        Exception.raise __FUNCTION__ IO_Format (Printf.sprintf "Invalid field %d (found %d)" n_field n)
       else
         numbers.(n_field - 1)
   end
@@ -55,24 +54,36 @@ module KMerIterator =
   end
 module KMI = KMerIterator
 
+type to_do_t =
+  | Empty
+  | Of_file of string
+  | Set_content of KMI.Content.t
+  | Set_hasher of KMI.Hasher.t
+  | Set_weight_extractor of int
+  | Set_max_results_size of int
+  (* The string is the label - if empty, each sequence names is treated as a label *)
+  | Add_sequences of Files.Type.t * string
+  | To_file of string
+
+module Defaults =
+  struct
+    let content = KMI.Content.of_string "ds-DNA"
+    let hasher = KMI.Hasher.K_mers 12
+    let weight_field = 0
+    let max_results_size = 16777216 (* Or: 4^12 *)
+  end
+
 module Parameters =
   struct
-    let option_l_or_L = ref false
-    let content = KMI.Content.of_string "ds-DNA" |> ref
-    let hasher = KMI.Hasher.K_mers 12 |> ref
-    let weight_field = ref 0
-    let max_results_size = ref 16777216 (* Or: 4^12 *)
-    let inputs = ref []
-    let label = ref ""
-    let output = ref ""
+    let program = ref []
     (*let threads = Tools.Parallel.get_nproc () |> ref*)
     let verbose = ref false
   end
 
 let info = {
   Tools.Argv.name = "KPopCount";
-  version = "21";
-  date = "23-Oct-2025"
+  version = "22";
+  date = "03-Nov-2025"
 } and authors = [
   "2017-2025", "Paolo Ribeca", "paolo.ribeca@gmail.com"
 ]
@@ -80,8 +91,9 @@ let info = {
 let () =
   let module TA = Tools.Argv in
   TA.set_header (info, authors, [ BiOCamLib.Info.info; KPop.Info.info ]);
-  TA.set_synopsis "-l <output_vector_label>|-L [OPTIONS]";
+  TA.set_synopsis "[ACTIONS]";
   TA.parse [
+    TA.make_separator_multiline [ "Actions."; "They are executed delayed and in order of specification." ];
     TA.make_separator "Algorithmic parameters";
     [ "-k"; "--k-mer-size"; "--k-mer-length" ],
       Some "<positive_integer>",
@@ -91,10 +103,10 @@ let () =
         "the last one will take effect" ],
       TA.Default
         (fun () ->
-          match !Parameters.hasher with
-          | K_mers _ -> KMI.Hasher.to_string !Parameters.hasher
+          match Defaults.hasher with
+          | K_mers _ -> KMI.Hasher.to_string Defaults.hasher
           | Gapped _ -> "not used"),
-      (fun _ -> Parameters.hasher := KMI.Hasher.K_mers (TA.get_parameter_int_pos ()));
+      (fun _ -> Set_hasher (KMI.Hasher.K_mers (TA.get_parameter_int_pos ())) |> List.accum Parameters.program);
     [ "-g"; "--gapped-k-mer-sizes"; "--gapped-k-mer-lengths" ],
       Some "BLOCK_SIZE GAP_SIZE",
       [ "where";
@@ -111,25 +123,24 @@ let () =
         "the last one will take effect" ],
       TA.Default
           (fun () ->
-            match !Parameters.hasher with
+            match Defaults.hasher with
             | K_mers _ -> "not_used"
-            | Gapped _ -> KMI.Hasher.to_string !Parameters.hasher),
+            | Gapped _ -> KMI.Hasher.to_string Defaults.hasher),
       (fun _ ->
         let k = TA.get_parameter_int_pos () in
         let g = TA.get_parameter_int_pos () in
-        Parameters.hasher := KMI.Hasher.Gapped (k, g));
+        Set_hasher (KMI.Hasher.Gapped (k, g)) |> List.accum Parameters.program);
     [ "--max-results-size" ],
       Some "<positive_integer>",
       [ "maximum number of k-mer hashes to be kept in memory at any given time.";
         "If more are present, the ones corresponding to the lowest cardinality";
         "will be removed from memory and printed out, and there will be";
         "repeated hashes in the output" ],
-      TA.Default (fun () -> string_of_int !Parameters.max_results_size),
-      (fun _ -> Parameters.max_results_size := TA.get_parameter_int_pos ());
-    TA.make_separator "Input/Output";
+      TA.Default (fun () -> string_of_int Defaults.max_results_size),
+      (fun _ -> Set_max_results_size (TA.get_parameter_int_pos ()) |> List.accum Parameters.program);
     [ "-c"; "--content" ],
       Some "'ss-DNA'|'single-stranded-DNA'|'ds-DNA'|'double-stranded-DNA'|'protein'|FULL",
-      [ "how file contents should be interpreted.";
+      [ "set how contents of following input files should be interpreted.";
         "When content is 'ss-DNA', 'protein' or 'text', only the sequence is hashed;";
         "when content is 'ds-DNA', both sequence and reverse complement are hashed.";
         "'ss-DNA' prevents automatic matching of reverse-complemented sequences;";
@@ -154,76 +165,107 @@ let () =
         "program to abort.";
         "If a dictionary file is specified, each of its lines is interpreted";
         "as a different dictionary entry/token" ],
-      TA.Default (fun _ -> KMI.Content.to_string !Parameters.content),
-      (fun _ -> Parameters.content := TA.get_parameter () |> KMI.Content.of_string);
-    [ "-f"; "--fasta" ],
-      Some "<fasta_file_name>",
-      [ "FASTA input file containing sequences.";
-        "You can specify more than one FASTA input, but not FASTA and FASTQ inputs";
-        "at the same time. Contents are expected to be homogeneous across inputs" ],
-      TA.Optional,
-      (fun _ -> Files.Type.FASTA (TA.get_parameter ()) |> List.accum Parameters.inputs);
-    [ "-s"; "--single-end" ],
-      Some "<fastq_file_name>",
-      [ "FASTQ input file containing single-end sequencing reads";
-        "You can specify more than one FASTQ input, but not FASTQ and FASTA inputs";
-        "at the same time. Contents are expected to be homogeneous across inputs" ],
-      TA.Optional,
-      (fun _ -> SingleEndFASTQ (TA.get_parameter ()) |> List.accum Parameters.inputs);
-    [ "-p"; "--paired-end" ],
-      Some "<fastq_file_name1> <fastq_file_name2>",
-      [ "FASTQ input files containing paired-end sequencing reads";
-        "You can specify more than one FASTQ input, but not FASTQ and FASTA inputs";
-        "at the same time. Contents are expected to be homogeneous across inputs" ],
-      TA.Optional,
-      (fun _ ->
-        let name1 = TA.get_parameter () in
-        let name2 = TA.get_parameter () in
-        PairedEndFASTQ (name1, name2) |> List.accum Parameters.inputs);
+      TA.Default (fun _ -> KMI.Content.to_string Defaults.content),
+      (fun _ -> Set_content (TA.get_parameter () |> KMI.Content.of_string) |> List.accum Parameters.program);
     [ "-w"; "--weights"; "--weights-from-sequence-names" ],
       Some "<non_negative_integer>",
       [ "given the index n specified as a parameter, extract the n-th number";
         "from each sequence name and weigh the corresponding sequence accordingly.";
         "Indices are 1-based; a value of 0 disables weighting.";
+        "If no such field exists, the program will fail.";
         "If the weight is a float number, the ceiling of such number will be used" ],
       TA.Default
         (fun _ ->
-          if !Parameters.weight_field = 0 then
+          if Defaults.weight_field = 0 then
             "do not weigh"
           else
-            string_of_int !Parameters.weight_field),
-      (fun _ -> Parameters.weight_field := TA.get_parameter_int_non_neg ());
-    [ "-l"; "--label" ],
-      Some "<output_vector_label>",
-      [ "label to be given to the k-mer spectrum in the output file.";
-        "It must not contain double quote '\"' characters.";
-        "Either option '-l' or option '-L' is mandatory" ],
+            string_of_int Defaults.weight_field),
+      (fun _ -> Set_weight_extractor (TA.get_parameter_int_non_neg ()) |> List.accum Parameters.program);
+    TA.make_separator "Input/Output of sequences";
+    [ "-f"; "--fasta" ],
+      Some "<fasta_file_name> <label>",
+      [ "process the sequences contained in the specified FASTA input file.";
+        "If a label is specified, the hashes extracted from all the sequences";
+        "are collected into one spectrum having the label as name; if the label is";
+        "empty, each sequence is turned into one separate spectrum and the";
+        "sequence name is used as label. Label and sequence names must not contain";
+        "double quote '\"' characters.";
+        "While you can specify several inputs possibly having different formats,";
+        "contents are expected to be homogeneous across inputs" ],
       TA.Optional,
       (fun _ ->
-        Parameters.option_l_or_L := true;
-        Parameters.label :=
-          let res = TA.get_parameter () in
-          try
-            Matrix.Base.strip_external_quotes_and_check res
-          with Matrix.Base.Quotes_in_name _ ->
-            TA.parse_error "Spectrum labels must not contain quotes";
-            assert false); (* To keep the compiler happy *)
-    [ "-L"; "--one-spectrum-per-sequence" ],
-      None,
-      [ "output one spectrum per input sequence, using the sequence name as label.";
-        "Sequence names must not contain double quote '\"' characters.";
-        "Either option '-l' or option '-L' is mandatory" ],
+        let path = TA.get_parameter () in
+        let label = TA.get_parameter () in
+        Add_sequences (Files.Type.FASTA path, label) |> List.accum Parameters.program);
+    [ "-s"; "--single-end" ],
+      Some "<fastq_file_name> <label>",
+      [ "process the sequences contained in the specified FASTQ input file";
+        "containing single-end sequencing reads.";
+        "If a label is specified, the hashes extracted from all the sequences";
+        "are collected into one spectrum having the label as name; if the label is";
+        "empty, each sequence is turned into one separate spectrum and the";
+        "sequence name is used as label. Label and sequence names must not contain";
+        "double quote '\"' characters.";
+        "While you can specify several inputs possibly having different formats,";
+        "contents are expected to be homogeneous across inputs" ],
       TA.Optional,
-      (fun _ -> Parameters.option_l_or_L := true);
+      (fun _ ->
+        let path = TA.get_parameter () in
+        let label = TA.get_parameter () in
+        Add_sequences (SingleEndFASTQ path, label) |> List.accum Parameters.program);
+    [ "-p"; "--paired-end" ],
+      Some "<fastq_file_name1> <fastq_file_name2> <label>",
+      [ "process the sequences contained in the specified FASTQ input file";
+        "containing paired-end sequencing reads.";
+        "If a label is specified, the hashes extracted from all the sequences";
+        "are collected into one spectrum having the label as name; if the label is";
+        "empty, each sequence is turned into one separate spectrum and the";
+        "sequence name is used as label. Label and sequence names must not contain";
+        "double quote '\"' characters.";
+        "While you can specify several inputs possibly having different formats,";
+        "contents are expected to be homogeneous across inputs" ],
+      TA.Optional,
+      (fun _ ->
+        let path1 = TA.get_parameter () in
+        let path2 = TA.get_parameter () in
+        let label = TA.get_parameter () in
+        Add_sequences (PairedEndFASTQ (path1, path2), label) |> List.accum Parameters.program);
+    [ "-t"; "--tabular" ],
+      Some "<fasta_file_name> <label>",
+      [ "process the sequences contained in the specified tabular input file.";
+        "If a label is specified, the hashes extracted from all the sequences";
+        "are collected into one spectrum having the label as name; if the label is";
+        "empty, each sequence is turned into one separate spectrum and the";
+        "sequence name is used as label. Label and sequence names must not contain";
+        "double quote '\"' characters.";
+        "While you can specify several inputs possibly having different formats,";
+        "contents are expected to be homogeneous across inputs" ],
+      TA.Optional,
+      (fun _ ->
+        let path = TA.get_parameter () in
+        let label = TA.get_parameter () in
+        Add_sequences (Files.Type.Tabular path, label) |> List.accum Parameters.program);
+    TA.make_separator "Input/Output of spectra databases";
+    [ "-e"; "--empty" ],
+      None,
+      [ "load an empty database into the register" ],
+      TA.Optional,
+      (fun _ -> Empty |> List.accum Parameters.program);
+    [ "-i"; "--input" ],
+      Some "<binary_file_prefix>",
+      [ "load into the register the database present in the specified file";
+        " (which must have extension '.KPopCounter' unless file is '/dev/*')" ],
+      TA.Optional,
+      (fun _ -> Of_file (TA.get_parameter ()) |> List.accum Parameters.program);
     [ "-o"; "--output" ],
-      Some "<output_file_prefix>",
-      [ "prefix of the generated output file";
-        " (will be given extension '.KPopSpectra.txt' unless file is '/dev/*')" ],
-      TA.Default (fun () -> if !Parameters.output = "" then "<stdout>" else !Parameters.output),
-      (fun _ -> Parameters.output := TA.get_parameter () |> KMerDB.Spectra.make_filename);
-    TA.make_separator "Miscellaneous";
+      Some "<binary_file_prefix>",
+      [ "save the database present in the register to the specified file";
+        " (which will be given extension '.KPopCounter' unless file is '/dev/*')" ],
+      TA.Optional,
+      (fun _ -> To_file (TA.get_parameter ()) |> List.accum Parameters.program);
+    TA.make_separator_multiline [ "Miscellaneous options."; "They are set immediately." ];
 (*
-    [ "-t"; "-T"; "--threads" ],
+    [ "-T"; "--threads" ],
       Some "<computing_threads>",
       [ "number of concurrent computing threads to be spawned";
         " (default automatically detected from your configuration)" ],
@@ -248,64 +290,65 @@ let () =
       TA.Optional,
       (fun _ -> TA.usage (); exit 1)
   ];
-  if not !Parameters.option_l_or_L then
-    TA.parse_error "One of options '-l' and '-L' is mandatory";
+  let program = List.rev !Parameters.program in
+  if program = [] then begin
+    TA.usage ();
+    exit 0
+  end;
   if !Parameters.verbose then
     TA.header ();
-  Parameters.inputs := List.rev !Parameters.inputs;
-  if !Parameters.inputs <> [] then begin
-    let is_format_fasta = ref false and store = ref Files.ReadsIterate.empty in
-    List.iteri
-      (fun i input ->
-        if i = 0 then
-          is_format_fasta := begin
-            match input with
-            | Files.Type.FASTA _ -> true
-            | SingleEndFASTQ _ | PairedEndFASTQ _ -> false
-            | _ -> assert false
-          end
-        else
-          if begin
-            match input with
-            | FASTA _ -> not !is_format_fasta
-            | SingleEndFASTQ _ | PairedEndFASTQ _ -> !is_format_fasta
-            | _ -> assert false
-          end then
-            TA.parse_error "You cannot process FASTA and FASTQ inputs together";
-        store := Files.ReadsIterate.add_from_files !store [| input |])
-      !Parameters.inputs;
-    let output =
-      if !Parameters.output = "" then
-        stdout
-      else
-        open_out !Parameters.output in
-    (* Header with label *)
-    if !Parameters.label <> "" then
-      Printf.fprintf output "\t%s\n" !Parameters.label;
-    let reads_cntr = ref 0
-    and k_mer_iterator =
-      KMI.make ~max_results_size:!Parameters.max_results_size ~verbose:!Parameters.verbose
-        !Parameters.content !Parameters.hasher (Printf.fprintf output "%s\t%d\n") in
-    (* Note that linting is done automatically at a lower level by KMerIterator
-        depending on the sequence type, so we disable it here *)
-    Files.ReadsIterate.iter ~linter:Sequences.Lint.none ~verbose:false
-      (fun _ segm_id read ->
-        let read_tag = Matrix.Base.strip_external_quotes_and_check read.tag in
-        (* If no global label has been specified, we output one per sequence *)
-        if !Parameters.label = "" then
-          Printf.fprintf output "\t%s\n" read_tag;
-        let weight =
-          if !Parameters.weight_field = 0 then
-            1
-          else
-            CoverageFromName.extract !Parameters.weight_field read_tag in
-        k_mer_iterator ~weight read.seq;
-        if !Parameters.verbose && !reads_cntr mod 1_000 = 0 then
-          Printf.eprintf "%s\r(%s): Added and hashed %d %s%!" String.TermIO.clear __FUNCTION__
-            !reads_cntr (String.pluralize_int "read" !reads_cntr);
-        if segm_id = 0 then
-          incr reads_cntr)
-      !store;
+  (* These are the registers available to the program *)
+  let db = KMerDB.make_empty () |> ref and content = ref Defaults.content and hasher = ref Defaults.hasher
+  and weight_field = ref Defaults.weight_field and max_results_size = ref Defaults.max_results_size
+  and reads_cntr = ref 0
+  and unexpected_end_of_output_file f =
+    try
+      f ()
+    with End_of_file ->
+      Exception.raise_unexpected_end_of_output __FUNCTION__ in
+  try
+    List.iter
+      (function
+        | Empty ->
+          db := KMerDB.make_empty ()
+        | Of_file prefix ->
+          db := KMerDB.of_binary ~verbose:!Parameters.verbose prefix
+        | Set_content c ->
+          content := c
+        | Set_hasher h ->
+          hasher := h
+        | Set_weight_extractor wf ->
+          weight_field := wf
+        | Set_max_results_size mrs ->
+          max_results_size := mrs
+        | Add_sequences (input, label) ->
+          let current = ref label in
+          let k_mer_iterator =
+            KMI.make ~max_results_size:!max_results_size ~verbose:!Parameters.verbose
+              !content !hasher (fun hash n -> db := KMerDB.add_counts !db !current hash n) in
+          (* Note that linting is done automatically at a lower level by KMerIterator
+              depending on the sequence type, so we disable it here *)
+          Files.ReadsIterate.iter ~linter:Sequences.Lint.none ~verbose:false
+            (fun _ segm_id read ->
+              (* If no global label has been specified, we output one per sequence *)
+              if label = "" then
+                current := read.tag;
+              let weight =
+                if !weight_field = 0 then
+                  1
+                else
+                  CoverageFromName.extract !weight_field read.tag in
+              k_mer_iterator ~weight read.seq;
+              if !Parameters.verbose && !reads_cntr mod 1_000 = 0 then
+                Printf.eprintf "%s\r(%s): Added and hashed %d %s%!" String.TermIO.clear __FUNCTION__
+                  !reads_cntr (String.pluralize_int "read" !reads_cntr);
+              if segm_id = 0 then
+                incr reads_cntr)
+            (Files.ReadsIterate.add_from_files Files.ReadsIterate.empty [| input |])
+        | To_file prefix ->
+          unexpected_end_of_output_file
+            (fun () -> KMerDB.to_binary ~verbose:!Parameters.verbose !db prefix))
+      program;
     if !Parameters.verbose then
       Printf.eprintf "%s\r(%s): Added and hashed %d %s.\n%!" String.TermIO.clear __FUNCTION__
         !reads_cntr (String.pluralize_int "read" !reads_cntr);
@@ -314,6 +357,13 @@ let () =
       (Tools.Timer.read "KMers.Iterator.Encoder:trie")
       (Tools.Timer.read "KMers.Iterator.Encoder:array")
       (Tools.Timer.read "KMers.Iterator.Encoder:accumulate");*)
-    close_out output
-  end
+  with
+  | Exception.E (Exception.Kind.Initialize, _, _) | Exception.E (Exception.Kind.IO_Format, _, _) as e ->
+    Exception.to_string e |> String.TermIO.red |> Printf.eprintf "(%s): FATAL: %s\n%!" __FUNCTION__
+  | exc ->
+    Printf.peprintf "(%s): %s\n%!" __FUNCTION__
+      ("FATAL: Uncaught exception: " ^ Printexc.to_string exc |> String.TermIO.red);
+    Printf.peprintf "(%s): This should not have happened - please contact <paolo.ribeca@gmail.com>\n%!" __FUNCTION__;
+    Printf.peprintf "(%s): You might also wish to rerun me with option -x to get a full backtrace.\n%!" __FUNCTION__;
+    Printexc.print_backtrace stderr
 
