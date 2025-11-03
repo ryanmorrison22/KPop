@@ -34,9 +34,14 @@ include (
     exception Header_expected of string
     exception Float_expected of string
     exception Duplicate_label of string
-    let add_twisted_from_file
-        ?(normalize = true) ?(threads = 1) ?(elements_per_step = 100) ?(verbose = false) ?(debug = false)
-        twister twisted fname =
+    let add_twisted_from_database
+        ?(threads = 1) ?(elements_per_step = 100) ?(verbose = false) ?(debug = false)
+        twister twisted path =
+
+      let db = KMerDB.of_binary ~verbose path in
+      assert false;
+
+
       ignore elements_per_step; (* Not used at the moment *)
       (* Perform some compatibility checks *)
       let twisted_col_names =
@@ -62,7 +67,7 @@ include (
       (* First we read spectra from the file.
          We have to conform the k-mers to the ones in the twister.
          As a bonus, we already know the size of the resulting vector *)
-      let file = open_in fname |> ref and line_num = ref 0 and eof_reached = ref false
+      let input = open_in path |> ref and line_num = ref 0 and eof_reached = ref false
       and labels = ref ("", "") and num_spectra = ref 0 in
       (* Parallel section *)
       BiOCamLib.Processes.Parallel.process_stream_chunkwise
@@ -74,7 +79,7 @@ include (
             (* Each file can contain one or more spectra - we read the next one *)
             begin try
               while true do
-                let line_s = input_line !file in
+                let line_s = input_line !input in
                 incr line_num;
                 let line = String.Split.on_char_as_array '\t' line_s in
                 let l = Array.length line in
@@ -96,7 +101,7 @@ include (
               done
             with
             | End_of_file ->
-              close_in !file;
+              close_in !input;
               labels := snd !labels, "";
               incr num_spectra;
               eof_reached := true
@@ -105,7 +110,7 @@ include (
             end;
             if verbose then
               Printf.eprintf "%s\r(%s): File '%s': Read %d %s on %d %s.%!"
-                String.TermIO.clear __FUNCTION__ fname
+                String.TermIO.clear __FUNCTION__ path
                 !num_spectra (String.pluralize_int ~plural:"spectra" "spectrum" !num_spectra)
                 !line_num (String.pluralize_int "line" !line_num);
             (* The lines are passed in reverse order, but that does not really matter much
@@ -143,7 +148,7 @@ include (
           let s_v = {
             Matrix.Base.length = num_twister_cols;
             elements =
-              if normalize && acc <> 0. then
+              if acc <> 0. then
                 IntMap.map (fun el -> el /. acc) !s_v
               else
                 !s_v
@@ -212,10 +217,10 @@ include (
       | prefix -> prefix ^ ".KPopTwister"
     exception Incompatible_archive_version of string * string
     let to_binary ?(verbose = false) t prefix =
-      let fname = make_filename_binary prefix in
-      let output = open_out fname in
+      let path = make_filename_binary prefix in
+      let output = open_out path in
       if verbose then
-        Printf.eprintf "(%s): Outputting twister to file '%s'...%!" __FUNCTION__ fname;
+        Printf.eprintf "(%s): Outputting twister to file '%s'...%!" __FUNCTION__ path;
       output_value output "KPopTwister";
       output_value output archive_version;
       Matrix.to_channel output t.twister;
@@ -224,10 +229,10 @@ include (
       if verbose then
         Printf.eprintf " done.\n%!"
     let of_binary ?(verbose = false) prefix =
-      let fname = make_filename_binary prefix in
-      let input = open_in fname in
+      let path = make_filename_binary prefix in
+      let input = open_in path in
       if verbose then
-        Printf.eprintf "(%s): Reading twister from file '%s'...%!" __FUNCTION__ fname;
+        Printf.eprintf "(%s): Reading twister from file '%s'...%!" __FUNCTION__ path;
       let which = (input_value input: string) in
       let version = (input_value input: string) in
       if which <> "KPopTwister" || version <> archive_version then
@@ -236,9 +241,9 @@ include (
       let inertia = Matrix.of_channel input in
       close_in input;
       if Matrix.Type.Twister <> twister.which then
-        Matrix.Unexpected_type (Twister, twister.which) |> raise;
+        Matrix.Exception.raise_unexpected_type __FUNCTION__ Twister twister.which;
       if Matrix.Type.Inertia <> inertia.which then
-        Matrix.Unexpected_type (Inertia, inertia.which) |> raise;
+        Matrix.Exception.raise_unexpected_type __FUNCTION__ Inertia inertia.which;
       if verbose then
         Printf.eprintf " done.\n%!";
       { twister; inertia }
@@ -259,8 +264,8 @@ include (
     exception Header_expected of string
     exception Float_expected of string
     exception Duplicate_label of string
-    val add_twisted_from_file: (* THIS MUST ALSO TAKE THE METRICS INTO ACCOUNT *)
-      ?normalize:bool -> ?threads:int -> ?elements_per_step:int -> ?verbose:bool -> ?debug:bool ->
+    val add_twisted_from_database:
+      ?threads:int -> ?elements_per_step:int -> ?verbose:bool -> ?debug:bool ->
       t -> Twisted.t -> string -> Twisted.t
     (* *)
     val to_files: ?precision:int -> ?threads:int -> ?elements_per_step:int -> ?verbose:bool -> t -> string -> unit

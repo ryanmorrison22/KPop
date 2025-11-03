@@ -21,13 +21,6 @@ open BiOCamLib.Better
 
 include (
   struct
-    (* We put this one here for lack of a better place *)
-    module Spectra =
-      struct
-        let make_filename = function
-          | s when String.length s >= 5 && String.sub s 0 5 = "/dev/" -> s
-          | prefix -> prefix ^ ".KPopSpectra.txt"
-      end
     (* Utility function to resize arrays *)
     let _resize_t_array_ ?(is_buffer = true) length resize create_null nx ny a =
       let lx = Array.length a in
@@ -445,72 +438,15 @@ include (
       and row_idx = StringHashtbl.find !db.row_names_to_idx hash in
       CountBAVector.(!db.core.storage.(col_idx).+(row_idx) <- N.of_int counts);
       !db
-    let merge ?(verbose = false) db_1 db_2 =
+    let merge ?(verbose = false) db1 db2 =
       (*let area_1 = db_1.core.n_cols*)
 
 
       (* It's OK to merge DBs with different k-mer sets, but they must have identical metadata rows *)
 
 
-      ()
+      assert false
 
-    exception Header_expected of string
-    (* Here we cannot easily parallelise because of DB memory management *)
-    let add_files ?(verbose = false) db prefixes =
-      let db = ref db and n = List.length prefixes and num_spectra = ref (-1) in
-      List.iteri
-        (fun i prefix ->
-          let fname = Spectra.make_filename prefix in
-          let input = open_in fname and line_num = ref 0 and col_idx = ref 0 in
-          (* Each file can contain one or more spectra *)
-          begin try
-            while true do
-              let line_s = input_line input in
-              incr line_num;
-              let line = String.Split.on_char_as_array '\t' line_s in
-              let l = Array.length line in
-              if l <> 2 then
-                Wrong_number_of_columns (!line_num, l, 2) |> raise;
-              (* Each file must begin with a header *)
-              if !line_num = 1 && line.(0) <> "" then
-                Header_expected line_s |> raise;
-              if line.(0) = "" then begin
-                (* Header *)
-                let label = Matrix.Base.strip_external_quotes_and_check line.(1) in
-                (* We make sure memory has been allocated for this sample *)
-                add_empty_column_if_needed db label;
-                col_idx := StringHashtbl.find !db.col_names_to_idx label;
-                incr num_spectra;
-                if verbose then
-                  Printf.eprintf "%s\r(%s): [%d/%d] File '%s': Read %d %s on %d %s%!"
-                    String.TermIO.clear __FUNCTION__ (i + 1) n fname
-                    !num_spectra (String.pluralize_int ~plural:"spectra" "spectrum" !num_spectra)
-                    !line_num (String.pluralize_int "line" !line_num)
-              end else begin
-                (* A regular line. The first element is the hash, the second one the count *)
-                add_empty_row_if_needed db line.(0);
-                let row_idx = StringHashtbl.find !db.row_names_to_idx line.(0) in
-                let v =
-                  try
-                    CountBAVector.N.of_string line.(1)
-                  with _ ->
-                    Exception.raise __FUNCTION__ IO_Format
-                      (Printf.sprintf "On line %d: Number expected, found '%s'" !line_num line.(1)) in
-                (* If there are repeated k-mers, we just accumulate them *)
-                !db.core.storage.(!col_idx).CountBAVector.+(row_idx) <- v
-              end
-            done
-          with End_of_file ->
-            close_in input;
-            incr num_spectra;
-            if verbose then
-              Printf.eprintf "%s\r(%s): [%d/%d] File '%s': Read %d %s on %d %s%s%!"
-                String.TermIO.clear __FUNCTION__ (i + 1) n fname
-                !num_spectra (String.pluralize_int ~plural:"spectra" "spectrum" !num_spectra)
-                !line_num (String.pluralize_int "line" !line_num) (if i + 1 = n then ".\n" else "")
-          end)
-        prefixes;
-      !db
     (* *)
     let selected_from_regexps ?(verbose = false) db regexps =
       (* We iterate over the columns *)
@@ -1128,10 +1064,6 @@ include (
         row_names_to_idx = invert_table core.idx_to_row_names;
         meta_names_to_idx = invert_table core.idx_to_meta_names }
   end: sig
-    module Spectra:
-      sig
-        val make_filename: string -> string
-      end
     module CountBAVector:
       sig
         include module type of Numbers.F32BAVector
@@ -1184,20 +1116,12 @@ include (
       meta_names_to_idx: int StringHashtbl.t (* Metadata fields *)
     }
     val make_empty: unit -> t
+    val merge: ?verbose:bool -> t -> t -> t
     (* Increase the counts for the specified sample and k-mer by the given amount *)
     val add_counts: t -> string -> string -> int -> t
-
-
-    (* Add text files containing k-mers. The first line must contain the label.
-       Multiple files separated by "\t\n" can be chained in the same input *)
-    exception Header_expected of string
-    val add_files: ?verbose:bool -> t -> string list -> t
-
     (* Add metadata - the first field must be the label *)
     exception Wrong_number_of_columns of int * int * int
     val add_meta: ?verbose:bool -> t -> string -> t
-
-
     (* Select column names identified by regexps on metadata fields *)
     val selected_from_regexps: ?verbose:bool -> t -> (string * Str.regexp) list -> StringSet.t
     val selected_negate: t -> StringSet.t -> StringSet.t

@@ -133,7 +133,7 @@ include (
         Incompatible_inertias (inertias_1, inertias_2) |> raise;
       let col_names_1 = t1.twisted.matrix.col_names and col_names_2 = t2.twisted.matrix.col_names in
       if col_names_1 <> col_names_2 then
-        Matrix.Base.Incompatible_geometries (col_names_1, col_names_2) |> raise;
+        Matrix.Exception.raise_incompatible_geometries __FUNCTION__ col_names_1 col_names_2;
       let metrics = Space.Distance.Metric.compute metric inertias_1 in
       let row_names_1 = t1.twisted.matrix.row_names and row_names_2 = t2.twisted.matrix.row_names in
       let r1 = Array.length row_names_1 and r2 = Array.length row_names_2 in
@@ -272,7 +272,7 @@ include (
         Incompatible_inertias (inertias_qs, inertias_db) |> raise;
       let col_names_qs = qs.twisted.matrix.col_names and col_names_db = db.twisted.matrix.col_names in
       if col_names_qs <> col_names_db then
-        Matrix.Base.Incompatible_geometries (col_names_qs, col_names_db) |> raise;
+        Matrix.Exception.raise_incompatible_geometries __FUNCTION__ col_names_qs col_names_db;
       let metrics = Space.Distance.Metric.compute metric inertias_qs in
       (* Here distance is by definition euclidean *)
       let distance = Space.Distance.of_string "euclidean" and d = Array.length col_names_qs in
@@ -382,7 +382,7 @@ include (
           | "gaps" -> Gaps
           | "centroids" -> Centroids
           | s ->
-            Printf.sprintf "(%s): Unknown algorithm '%s'" __FUNCTION__ s |> failwith
+            Exception.raise_unrecognized_initializer __FUNCTION__ "algorithm" s
         let to_string = function
           | Gaps -> "gaps"
           | Centroids -> "centroids"
@@ -669,7 +669,6 @@ include (
     let make_filename_binary = function
       | w when String.length w >= 5 && String.sub w 0 5 = "/dev/" -> w
       | prefix -> prefix ^ ".KPopTwisted"
-    exception Incompatible_archive_version of string * string
     let to_binary ?(verbose = false) t prefix =
       let fname = make_filename_binary prefix in
       let output = open_out fname in
@@ -690,14 +689,14 @@ include (
       let which = (input_value input: string) in
       let version = (input_value input: string) in
       if which <> "KPopTwisted" || version <> archive_version then
-        Incompatible_archive_version (which, version) |> raise;
+        Matrix.Exception.raise_incompatible_archive_version __FUNCTION__ which version;
       let inertia = Matrix.of_channel input in
       let twisted = Matrix.of_channel input in
       close_in input;
       if Matrix.Type.Inertia <> inertia.which then
-        Matrix.Unexpected_type (Inertia, inertia.which) |> raise;
+        Matrix.Exception.raise_unexpected_type __FUNCTION__ Inertia inertia.which;
       if Matrix.Type.Twisted <> twisted.which then
-        Matrix.Unexpected_type (Twisted, twisted.which) |> raise;
+        Matrix.Exception.raise_unexpected_type __FUNCTION__ Twisted twisted.which;
       if verbose then
         Printf.eprintf " done.\n%!";
       { inertia; twisted }

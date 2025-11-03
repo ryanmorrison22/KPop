@@ -20,8 +20,8 @@ open KPop
 type to_do_t =
   | Empty
   | Of_file of string
+  | Add_file of string
   | Add_meta of string
-  | Add_files of string list
   | Combination_criterion_set of KMerDB.CombinationCriterion.t
   | Split_spectra of string
   | Add_combined_selected of string (* The new label *)
@@ -34,16 +34,10 @@ type to_do_t =
   | Selected_negate
   | Selected_print
   | Selected_clear
-  | Selected_to_filter
   | To_file of string
-  | Table_output_row_names of bool
-  | Table_output_col_names of bool
-  | Table_output_metadata of bool
-  | Table_transpose of bool
   | Table_output_zero_rows of bool
   | Table_precision of int
-  | To_table of string
-  | To_spectra of string
+  | To_tabular of string
   | Distance_set of Space.Distance.t
   | Distance_normalisation_set of bool
   | To_distances of regexps_t * regexps_t * string
@@ -53,7 +47,8 @@ module Defaults =
   struct
     let combination_criterion = KMerDB.CombinationCriterion.of_string "mean"
     let transformation = KMerDB.Transformation.of_string "power(1)"
-    let filter = KMerDB.TableFilter.default
+    let output_zero_rows = false
+    let precision = 15
     let distance = Space.Distance.of_string "euclidean"
     let distance_normalise = true
   end
@@ -67,8 +62,8 @@ module Parameters =
 
 let info = {
   Tools.Argv.name = "KPopCountDB";
-  version = "51";
-  date = "20-Oct-2025"
+  version = "52";
+  date = "03-Nov-2025"
 } and authors = [
   "2020-2025", "Paolo Ribeca", "paolo.ribeca@gmail.com"
 ]
@@ -92,9 +87,9 @@ let () =
   TA.parse [
     TA.make_separator_multiline [ "Actions."; "They are executed delayed and in order of specification." ];
     TA.make_separator_multiline [ ""; "Actions on the database register:" ];
-    [ "-e"; "--empty" ],
+    [ "-0"; "--zero"; "--empty" ],
       None,
-      [ "put an empty database into the register" ],
+      [ "load an empty database into the register" ],
       TA.Optional,
       (fun _ -> Empty |> List.accum Parameters.program);
     [ "-i"; "--input" ],
@@ -103,6 +98,12 @@ let () =
         " (which must have extension '.KPopCounter' unless file is '/dev/*')" ],
       TA.Optional,
       (fun _ -> Of_file (TA.get_parameter ()) |> List.accum Parameters.program);
+    [ "-a"; "--add" ],
+      Some "<binary_file_prefix>",
+      [ "add to the register the contents of the database present in the specified file";
+        " (which must have extension '.KPopCounter' unless file is '/dev/*')" ],
+      TA.Optional,
+      (fun _ -> Add_file (TA.get_parameter ()) |> List.accum Parameters.program);
     [ "-m"; "--metadata"; "--add-metadata" ],
       Some "<metadata_table_file_name>",
       [ "add to the database present in the register metadata from the specified file.";
@@ -111,14 +112,6 @@ let () =
         "Metadata field names and values must not contain double quote '\"' characters" ],
       TA.Optional,
       (fun _ -> Add_meta (TA.get_parameter ()) |> List.accum Parameters.program);
-    [ "-k"; "--kmers"; "--add-kmers"; "--add-kmer-files" ],
-      Some "<k-mer_table_file_prefix>[','...','<k-mer_table_file_prefix>]",
-      [ "add to the database present in the register the k-mer spectra contained in the";
-        "specified files, each of which can consist of one or more concatenated spectra";
-        " (files must have extension '.KPopSpectra.txt' unless file is '/dev/*')" ],
-      TA.Optional,
-      (fun _ ->
-        Add_files (TA.get_parameter () |> String.Split.on_char_as_list ',') |> List.accum Parameters.program);
     [ "--combination-criterion"; "--spectrum-combination-criterion" ],
       Some "'mean'|'median'",
       [ "set the criterion used to combine the k-mer frequencies of spectra.";
@@ -207,43 +200,17 @@ let () =
         let regexps_1 = TA.get_parameter () |> parse_regexp_selector "-d" in
         let regexps_2 = TA.get_parameter () |> parse_regexp_selector "-d" in
         To_distances (regexps_1, regexps_2, TA.get_parameter ()) |> List.accum Parameters.program);
-    [ "--table-output-row-names" ],
-      Some "'true'|'false'",
-      [ "whether to output row names for the database present in the register";
-        "when writing it as a tab-separated file" ],
-      TA.Default (fun () -> string_of_bool Defaults.filter.print_row_names),
-      (fun _ -> Table_output_row_names (TA.get_parameter_boolean ()) |> List.accum Parameters.program);
-    [ "--table-output-col-names" ],
-      Some "'true'|'false'",
-      [ "whether to output column names for the database present in the register";
-        "when writing it as a tab-separated file" ],
-      TA.Default (fun () -> string_of_bool Defaults.filter.print_col_names),
-      (fun _ -> Table_output_col_names (TA.get_parameter_boolean ()) |> List.accum Parameters.program);
-    [ "--table-output-metadata" ],
-      Some "'true'|'false'",
-      [ "whether to output metadata for the database present in the register";
-        "when writing it as a tab-separated file" ],
-      TA.Default (fun () -> string_of_bool Defaults.filter.print_metadata),
-      (fun _ -> Table_output_metadata (TA.get_parameter_boolean ()) |> List.accum Parameters.program);
-    [ "--table-transpose" ],
-      Some "'true'|'false'",
-      [ "whether to transpose the database present in the register";
-        "before writing it as a tab-separated file";
-        " (if 'true': rows are spectrum names, columns [metadata and] k-mer names;";
-        "  if 'false': rows are [metadata and] k-mer names, columns spectrum names)" ],
-      TA.Default (fun () -> string_of_bool Defaults.filter.transpose),
-      (fun _ -> Table_transpose (TA.get_parameter_boolean ()) |> List.accum Parameters.program);
     [ "--counts-output-zero-kmers"; "--counts-output-zero-k-mers" ],
       Some "'true'|'false'",
       [ "whether to output k-mers whose frequencies are all zero";
         "when writing the database as table or spectra" ],
-      TA.Default (fun () -> string_of_bool Defaults.filter.print_zero_rows),
+      TA.Default (fun () -> string_of_bool Defaults.output_zero_rows),
       (fun _ -> Table_output_zero_rows (TA.get_parameter_boolean ()) |> List.accum Parameters.program);
     [ "--counts-precision" ],
       Some "<positive_integer>",
       [ "set the number of precision digits to be used when outputting counts";
         "as table or spectra" ],
-      TA.Default (fun () -> string_of_int Defaults.filter.precision),
+      TA.Default (fun () -> string_of_int Defaults.precision),
       (fun _ -> Table_precision (TA.get_parameter_int_pos ()) |> List.accum Parameters.program);
     [ "-t"; "--table"; "--to-table" ],
       Some "<file_prefix>",
@@ -252,14 +219,7 @@ let () =
         "  The result will be given extension '.KPopCounter.txt'";
         "  unless file is '/dev/*')" ],
       TA.Optional,
-      (fun _ -> To_table (TA.get_parameter ()) |> List.accum Parameters.program);
-    [ "-s"; "--spectra"; "--to-spectra" ],
-      Some "<file_prefix>",
-      [ "write the database present in the register as k-mer spectra";
-        " (the result will be given extension '.KPopSpectra.txt'";
-        "  unless file is '/dev/*')" ],
-      TA.Optional,
-      (fun _ -> To_spectra (TA.get_parameter ()) |> List.accum Parameters.program);
+      (fun _ -> To_tabular (TA.get_parameter ()) |> List.accum Parameters.program);
     TA.make_separator_multiline [ ""; "Actions involving the selection register:" ];
     [ "-L"; "--labels"; "--selection-from-labels" ],
       Some "<spectrum_label>[','...','<spectrum_label>]",
@@ -308,12 +268,6 @@ let () =
       [ "purge the selection register" ],
       TA.Optional,
       (fun _ -> Selected_clear |> List.accum Parameters.program);
-    [ "-F"; "--selection-to-table-filter" ],
-      None,
-      [ "filter out spectra whose labels are present in the selection register";
-        "when writing the database as a tab-separated file" ],
-      TA.Optional,
-      (fun _ -> Selected_to_filter |> List.accum Parameters.program);
     TA.make_separator_multiline [ "Miscellaneous options."; "They are set immediately" ];
     [ "-T"; "--threads" ],
       Some "<computing_threads>",
@@ -351,8 +305,13 @@ let () =
   (* These are the registers available to the program *)
   let current = KMerDB.make_empty () |> ref and selected = ref StringSet.empty
   and combination_criterion = ref Defaults.combination_criterion
-  and filter = ref Defaults.filter
-  and distance = ref Defaults.distance and distance_normalise = ref Defaults.distance_normalise in
+  and output_zero_rows = ref Defaults.output_zero_rows and precision = ref Defaults.precision
+  and distance = ref Defaults.distance and distance_normalise = ref Defaults.distance_normalise
+  and unexpected_end_of_output_file f =
+    try
+      f ()
+    with End_of_file ->
+      Exception.raise_unexpected_end_of_output __FUNCTION__ in
   try
     List.iter
       (function
@@ -360,10 +319,12 @@ let () =
           current := KMerDB.make_empty ()
         | Of_file prefix ->
           current := KMerDB.of_binary ~verbose:!Parameters.verbose prefix
-        | Add_meta fname ->
-          current := KMerDB.add_meta ~verbose:!Parameters.verbose !current fname
-        | Add_files prefixes ->
-          current := KMerDB.add_files ~verbose:!Parameters.verbose !current prefixes
+        | Add_file prefix ->
+          current :=
+            KMerDB.of_binary ~verbose:!Parameters.verbose prefix |>
+            KMerDB.merge ~verbose:!Parameters.verbose !current
+        | Add_meta path ->
+          current := KMerDB.add_meta ~verbose:!Parameters.verbose !current path
         | Combination_criterion_set criterion ->
           combination_criterion := criterion
         | Split_spectra classes_label ->
@@ -397,26 +358,19 @@ let () =
           Printf.eprintf " ].\n%!"
         | Selected_clear ->
           selected := StringSet.empty
-        | Selected_to_filter ->
-          filter := { !filter with filter_columns = !selected }
-        | Table_output_row_names print_row_names ->
-          filter := { !filter with print_row_names }
-        | Table_output_col_names print_col_names ->
-          filter := { !filter with print_col_names }
-        | Table_output_metadata print_metadata ->
-          filter := { !filter with print_metadata }
-        | Table_transpose transpose ->
-          filter := { !filter with transpose }
-        | Table_output_zero_rows print_zero_rows ->
-          filter := { !filter with print_zero_rows }
-        | Table_precision precision ->
-          filter := { !filter with precision }
-        | To_table prefix ->
-          KMerDB.to_table ~filter:!filter ~threads:!Parameters.threads ~verbose:!Parameters.verbose !current prefix
-        | To_spectra prefix ->
-          KMerDB.to_spectra ~filter:!filter ~threads:!Parameters.threads ~verbose:!Parameters.verbose !current prefix
+        | Table_output_zero_rows ozr ->
+          output_zero_rows := ozr
+        | Table_precision p ->
+          precision := p
+        | To_tabular prefix ->
+          unexpected_end_of_output_file
+            (fun () ->
+              KMerDB.to_files ~precision:!precision ~output_zero_rows:!output_zero_rows
+                              ~threads:!Parameters.threads ~verbose:!Parameters.verbose
+                              !current prefix)
         | To_file prefix ->
-          KMerDB.to_binary ~verbose:!Parameters.verbose !current prefix
+          unexpected_end_of_output_file
+            (fun () -> KMerDB.to_binary ~verbose:!Parameters.verbose !current prefix)
         | Distance_set dist ->
           distance := dist
         | Distance_normalisation_set normalise ->
@@ -425,14 +379,14 @@ let () =
           let selected_1 = KMerDB.selected_from_regexps ~verbose:!Parameters.verbose !current regexps_1
           and selected_2 = KMerDB.selected_from_regexps ~verbose:!Parameters.verbose !current regexps_2 in
           KMerDB.to_distances
-            ~precision:!filter.precision ~normalise:!distance_normalise
+            ~precision:!precision ~normalise:!distance_normalise
             ~threads:!Parameters.threads ~verbose:!Parameters.verbose
             !distance !current selected_1 selected_2 prefix)
       program
-  with exc ->
-
-(* TODO: WE SHOULD EXCLUDE THE CASE OF BROKEN PIPE *)
-
+  with
+  | Exception.E (Exception.Kind.Initialize, _, _) | Exception.E (Exception.Kind.IO_Format, _, _) as e ->
+    Exception.to_string e |> String.TermIO.red |> Printf.eprintf "(%s): FATAL: %s\n%!" __FUNCTION__
+  | exc ->
     Printf.peprintf "(%s): %s\n%!" __FUNCTION__
       ("FATAL: Uncaught exception: " ^ Printexc.to_string exc |> String.TermIO.red);
     Printf.peprintf "(%s): This should not have happened - please contact <paolo.ribeca@gmail.com>\n%!" __FUNCTION__;

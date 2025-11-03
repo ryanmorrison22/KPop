@@ -246,7 +246,7 @@ let () =
         let label = TA.get_parameter () in
         Add_sequences (Files.Type.Tabular path, label) |> List.accum Parameters.program);
     TA.make_separator "Input/Output of spectra databases";
-    [ "-e"; "--empty" ],
+    [ "-0"; "--zero"; "--empty" ],
       None,
       [ "load an empty database into the register" ],
       TA.Optional,

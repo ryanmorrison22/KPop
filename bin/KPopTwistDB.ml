@@ -52,8 +52,7 @@ type to_do_t =
   | Binary_to_register of RegisterType.t * string (* Input prefix *)
   | Tables_to_register of RegisterType.t * string (* Input prefix *)
   | Add_binary_to_twisted of string (* Input prefix *)
-  | Add_tables_to_twisted of string (* Input prefix *)
-  | Add_spectra_to_twisted of string (* Input prefix *)
+  | Twist_database of string (* Input prefix *)
 (* | Add_kmers_binary_to_twisted of string *)
   | Register_to_binary of RegisterType.t * string (* Output prefix *)
   | Set_precision_tables of int
@@ -103,8 +102,8 @@ module Parameters =
 
 let info = {
   Tools.Argv.name = "KPopTwistDB";
-  version = "45";
-  date = "24-Oct-2025"
+  version = "46";
+  date = "03-Nov-2025"
 } and authors = [
   "2022-2025", "Paolo Ribeca", "paolo.ribeca@gmail.com";
   "2024     ", "Ünsal Öztürk", "uensal.oeztuerk@gmail.com"
@@ -116,7 +115,7 @@ let () =
   TA.set_synopsis "[ACTIONS]";
   TA.parse [
     TA.make_separator_multiline [ "Actions."; "They are executed delayed and in order of specification." ];
-    [ "-z"; "--zero"; "--empty" ],
+    [ "-0"; "--zero"; "--empty" ],
       Some "'T'|'t'",
       [ "load an empty database into the specified register";
         " ('T'=twister; 't'=twisted)" ],
@@ -150,40 +149,34 @@ let () =
         match TA.get_parameter () |> RegisterType.of_string with
         | Twister | Twisted as register_type ->
           Tables_to_register (register_type, TA.get_parameter ()) |> List.accum Parameters.program);
-    [ "-a"; "--add"; "--add-binary"; "--add-binary-to-twisted" ],
+    [ "-a"; "--add"; "--add-to-twisted" ],
       Some "<binary_file_prefix>",
       [ "add the contents of the specified binary database to the twisted register.";
         "File extension is automatically determined";
         " (will be '.KPopTwisted', unless file is '/dev/*')" ],
       TA.Optional,
       (fun _ -> Add_binary_to_twisted (TA.get_parameter ()) |> List.accum Parameters.program);
-    [ "-A"; "--Add"; "--add-tabular"; "--add-tabular-to-twisted" ],
-      Some "<tabular_file_prefix>",
-      [ "add the contents of the specified tabular database to the twisted register.";
-        "File extension is automatically determined";
-        " (will be '.KPopTwisted.txt', unless file is '/dev/*')" ],
+    [ "-t"; "--twist"; "--twist-kmers"; "--twist-spectra" ],
+      Some "<binary_file_prefix>",
+      [ "twist the k-mer spectra contained in the specified binary database";
+        "according to the transformation present in the twister register,";
+        "and add the results to the database loaded in the twisted register" ],
       TA.Optional,
-      (fun _ -> Add_tables_to_twisted (TA.get_parameter ()) |> List.accum Parameters.program);
-    [ "-k"; "--kmers"; "-s"; "--spectra"; "--add-kmers"; "--add-spectra" ],
-      Some "<spectra_tabular_file_name>",
-      [ "twist the k-mers from the specified file according to the transformation";
-        "present in the twister register, and add the results to the database";
-        "loaded in the twisted register" ],
-      TA.Optional,
-      (fun _ -> Add_spectra_to_twisted (TA.get_parameter ()) |> List.accum Parameters.program);
+      (fun _ -> Twist_database (TA.get_parameter ()) |> List.accum Parameters.program);
     [ "-m"; "--metric"; "--metric-function" ],
       Some "'flat'|'powers('POWERS_PARAMETERS')'",
-      [ "where POWERS_PARAMETERS :=";
-        " <non-negative_float>','<fractional_float>','<non-negative_float>";
+      [ "where POWERS_PARAMETERS := ";
+        "        INTERNAL_POWER','FRACTIONAL_ACCUMULATIVE_THRESHOLD','EXTERNAL_POWER";
+        "      INTERNAL_POWER := <non-negative_float>";
+        "      FRACTIONAL_ACCUMULATIVE_THRESHOLD := <fractional_float>";
+        "      EXTERNAL_POWER := <non-negative_float>";
         "Set the metric function to be used when computing distances.";
-        "Parameters for 'powers' are:";
-        " internal_power; fractional_accumulative_threshold; external_power.";
         "The 'power' transformation is computed as follows:";
-        " (1) the inertia vector is raised to internal_power and normalized;";
-        " (2) elements are summed in order until fractional_accumulative_threshold";
-        "      (a number between 0. and 1.) is reached, while the elements";
-        "      above the threshold are set to zero";
-        " (3) the resulting vector is raised to external_power and normalized.";
+        " (1) the inertia vector is raised to INTERNAL_POWER and normalized;";
+        " (2) elements are summed in order until FRACTIONAL_ACCUMULATIVE_THRESHOLD";
+        "     (a number between 0. and 1.) is reached, while the elements";
+        "     above the threshold are set to zero";
+        " (3) the resulting vector is raised to EXTERNAL_POWER and normalized.";
         "Note that";
         " 'flat'";
         "(which is equivalent to 'power(0,1,1)' or 'power(1,1,0)')";
@@ -341,7 +334,7 @@ let () =
       (fun _ ->
         let twisted_prefix = TA.get_parameter () in
         Summary_from_twisted_neighbors (twisted_prefix, TA.get_parameter ()) |> List.accum Parameters.program);
-    TA.make_separator_multiline [ ""; "Experimental actions."; "They might be removed from future versions." ];
+    TA.make_separator_multiline [ ""; "Experimental actions."; "They may be removed from future versions." ];
     [ "--precision-for-splits" ],
       Some "<positive_integer>",
       [ "set how many precision digits should be used when outputting splits";
@@ -417,9 +410,9 @@ let () =
       | Binary_to_register (Twister, _) | Tables_to_register (Twister, _) ->
         twister_loaded := true
       | Binary_to_register (Twisted, _) | Tables_to_register (Twisted, _)
-      | Add_binary_to_twisted _ | Add_tables_to_twisted _ ->
+      | Add_binary_to_twisted _ ->
         ()
-      | Add_spectra_to_twisted _ ->
+      | Twist_database _ ->
         (* A twister must have been loaded to twist spectra *)
         if not !twister_loaded then
           TA.parse_error
@@ -472,12 +465,10 @@ let () =
           twisted := twisted_of_files prefix
         | Add_binary_to_twisted prefix ->
           twisted := twisted_of_binary prefix |> Twisted.merge_rowwise !twisted
-        | Add_tables_to_twisted prefix ->
-          twisted := twisted_of_files prefix |> Twisted.merge_rowwise !twisted
-        | Add_spectra_to_twisted fname ->
+        | Twist_database fname ->
           twisted :=
-            Twister.add_twisted_from_file
-              ~normalize:true ~threads:!Parameters.threads ~verbose:!Parameters.verbose
+            Twister.add_twisted_from_database
+              ~threads:!Parameters.threads ~verbose:!Parameters.verbose
               ~debug:!Parameters.debug_twisting !twister !twisted fname
         | Register_to_binary (Twister, prefix) ->
           Twister.to_binary ~verbose:!Parameters.verbose !twister prefix
@@ -539,7 +530,10 @@ let () =
             ~threads:!Parameters.threads ~verbose:!Parameters.verbose
             !metric (twisted_of_binary prefix_in) !twisted prefix_out)
       program
-  with exc ->
+  with
+  | Exception.E (Exception.Kind.Initialize, _, _) | Exception.E (Exception.Kind.IO_Format, _, _) as e ->
+    Exception.to_string e |> String.TermIO.red |> Printf.eprintf "(%s): FATAL: %s\n%!" __FUNCTION__
+  | exc ->
 
 (* TODO: WE SHOULD EXCLUDE THE CASE OF BROKEN PIPE *)
 
