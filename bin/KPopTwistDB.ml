@@ -115,6 +115,7 @@ let () =
   TA.set_synopsis "[ACTIONS]";
   TA.parse [
     TA.make_separator_multiline [ "Actions."; "They are executed delayed and in order of specification." ];
+    TA.make_separator_multiline [ ""; "Actions on the database registers - Input/Output operations:" ];
     [ "-0"; "--zero"; "--empty" ],
       Some "'T'|'t'",
       [ "load an empty database into the specified register";
@@ -156,6 +157,39 @@ let () =
         " (will be '.KPopTwisted', unless file is '/dev/*')" ],
       TA.Optional,
       (fun _ -> Add_binary_to_twisted (TA.get_parameter ()) |> List.accum Parameters.program);
+    [ "-o"; "--output" ],
+      Some "'T'|'t' <binary_file_prefix>",
+      [ "save the database present in the specified register";
+        " ('T'=twister; 't'=twisted)";
+        "to the specified binary file.";
+        "File extension is automatically assigned depending on database type";
+        " (will be '.KPopTwister' or '.KPopTwisted', respectively,";
+        "  unless file is '/dev/*')" ],
+      TA.Optional,
+      (fun _ ->
+        match TA.get_parameter () |> RegisterType.of_string with
+        | Twister | Twisted as register_type ->
+          Register_to_binary (register_type, TA.get_parameter ()) |> List.accum Parameters.program);
+    [ "--precision-for-tables" ],
+      Some "<positive_integer>",
+      [ "set how many precision digits should be used when outputting numbers";
+        "in tabular formats" ],
+      TA.Default (fun () -> string_of_int Defaults.precision_tables),
+      (fun _ -> Set_precision_tables (TA.get_parameter_int_pos ()) |> List.accum Parameters.program);
+    [ "-O"; "--Output" ],
+      Some "'T'|'t' <tabular_file_prefix>",
+      [ "save the database present in the specified register";
+        " ('T'=twister; 't'=twisted)";
+        "to the specified tabular files.";
+        "File extensions are automatically assigned depending on database type";
+        " (will be: '.KPopTwister.txt' and '.KPopInertia.txt';";
+        "       or: '.KPopInertia.txt' and '.KPopTwisted.txt', respectively,";
+        "  unless file is '/dev/*')" ],
+      TA.Optional,
+      (fun _ ->
+        let register_type = TA.get_parameter () |> RegisterType.of_string in
+        Register_to_tables (register_type, TA.get_parameter ()) |> List.accum Parameters.program);
+    TA.make_separator_multiline [ ""; "Actions on the database register - Other operations:" ];
     [ "-t"; "--twist"; "--twist-kmers"; "--twist-spectra" ],
       Some "<binary_file_prefix>",
       [ "twist the k-mer spectra contained in the specified binary database";
@@ -212,38 +246,6 @@ let () =
         " (will be '.KPopVectors' unless file is '/dev/*')" ],
       TA.Optional,
       (fun _ -> Embeddings_from_twisted (TA.get_parameter ()) |> List.accum Parameters.program);
-    [ "-o"; "--output" ],
-      Some "'T'|'t' <binary_file_prefix>",
-      [ "save the database present in the specified register";
-        " ('T'=twister; 't'=twisted)";
-        "to the specified binary file.";
-        "File extension is automatically assigned depending on database type";
-        " (will be '.KPopTwister' or '.KPopTwisted', respectively,";
-        "  unless file is '/dev/*')" ],
-      TA.Optional,
-      (fun _ ->
-        match TA.get_parameter () |> RegisterType.of_string with
-        | Twister | Twisted as register_type ->
-          Register_to_binary (register_type, TA.get_parameter ()) |> List.accum Parameters.program);
-    [ "--precision-for-tables" ],
-      Some "<positive_integer>",
-      [ "set how many precision digits should be used when outputting numbers";
-        "in tabular formats" ],
-      TA.Default (fun () -> string_of_int Defaults.precision_tables),
-      (fun _ -> Set_precision_tables (TA.get_parameter_int_pos ()) |> List.accum Parameters.program);
-    [ "-O"; "--Output" ],
-      Some "'T'|'t' <tabular_file_prefix>",
-      [ "save the database present in the specified register";
-        " ('T'=twister; 't'=twisted)";
-        "to the specified tabular files.";
-        "File extensions are automatically assigned depending on database type";
-        " (will be: '.KPopTwister.txt' and '.KPopInertia.txt';";
-        "       or: '.KPopInertia.txt' and '.KPopTwisted.txt', respectively,";
-        "  unless file is '/dev/*')" ],
-      TA.Optional,
-      (fun _ ->
-        let register_type = TA.get_parameter () |> RegisterType.of_string in
-        Register_to_tables (register_type, TA.get_parameter ()) |> List.accum Parameters.program);
     [ "--distances-summarize-at-most"; "--distances-in-summary" ],
       Some "<positive_integer>|'all'",
       [ "set the maximum number of closest sequences to be printed";
@@ -334,7 +336,7 @@ let () =
       (fun _ ->
         let twisted_prefix = TA.get_parameter () in
         Summary_from_twisted_neighbors (twisted_prefix, TA.get_parameter ()) |> List.accum Parameters.program);
-    TA.make_separator_multiline [ ""; "Experimental actions."; "They may be removed from future versions." ];
+    TA.make_separator_multiline [ ""; "Experimental actions - They may be removed from future versions:" ];
     [ "--precision-for-splits" ],
       Some "<positive_integer>",
       [ "set how many precision digits should be used when outputting splits";
@@ -364,7 +366,7 @@ let () =
         " (will be '.PhyloSplits' unless file is '/dev/*')" ],
       TA.Optional,
       (fun _ -> Splits_from_twisted (TA.get_parameter ()) |> List.accum Parameters.program);
-    TA.make_separator_multiline [ "Miscellaneous options."; "They are set immediately." ];
+    TA.make_separator_multiline [ "Miscellaneous options."; "They are set immediately" ];
     [ "-T"; "--threads" ],
       Some "<computing_threads>",
       [ "number of concurrent computing threads to be spawned";

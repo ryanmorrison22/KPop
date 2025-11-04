@@ -94,7 +94,25 @@ let () =
   TA.set_synopsis "[ACTIONS]";
   TA.parse [
     TA.make_separator_multiline [ "Actions."; "They are executed delayed and in order of specification." ];
-    TA.make_separator "Algorithmic parameters";
+    TA.make_separator_multiline [ ""; "Input/Output of spectra databases:" ];
+    [ "-0"; "--zero"; "--empty" ],
+      None,
+      [ "load an empty database into the register" ],
+      TA.Optional,
+      (fun _ -> Empty |> List.accum Parameters.program);
+    [ "-i"; "--input" ],
+      Some "<binary_file_prefix>",
+      [ "load into the register the database present in the specified file";
+        " (which must have extension '.KPopCounter' unless file is '/dev/*')" ],
+      TA.Optional,
+      (fun _ -> Of_file (TA.get_parameter ()) |> List.accum Parameters.program);
+    [ "-o"; "--output" ],
+      Some "<binary_file_prefix>",
+      [ "save the database present in the register to the specified file";
+        " (which will be given extension '.KPopCounter' unless file is '/dev/*')" ],
+      TA.Optional,
+      (fun _ -> To_file (TA.get_parameter ()) |> List.accum Parameters.program);
+    TA.make_separator_multiline [ ""; "Algorithmic parameters:" ];
     [ "-k"; "--k-mer-size"; "--k-mer-length" ],
       Some "<positive_integer>",
       [ "set the hashing strategy to iteration over regular k-mers";
@@ -181,7 +199,7 @@ let () =
           else
             string_of_int Defaults.weight_field),
       (fun _ -> Set_weight_extractor (TA.get_parameter_int_non_neg ()) |> List.accum Parameters.program);
-    TA.make_separator "Input/Output of sequences";
+    TA.make_separator_multiline [ ""; "Input/Output of sequences for processing:" ];
     [ "-f"; "--fasta" ],
       Some "<fasta_file_name> <label>",
       [ "process the sequences contained in the specified FASTA input file.";
@@ -245,25 +263,7 @@ let () =
         let path = TA.get_parameter () in
         let label = TA.get_parameter () in
         Add_sequences (Files.Type.Tabular path, label) |> List.accum Parameters.program);
-    TA.make_separator "Input/Output of spectra databases";
-    [ "-0"; "--zero"; "--empty" ],
-      None,
-      [ "load an empty database into the register" ],
-      TA.Optional,
-      (fun _ -> Empty |> List.accum Parameters.program);
-    [ "-i"; "--input" ],
-      Some "<binary_file_prefix>",
-      [ "load into the register the database present in the specified file";
-        " (which must have extension '.KPopCounter' unless file is '/dev/*')" ],
-      TA.Optional,
-      (fun _ -> Of_file (TA.get_parameter ()) |> List.accum Parameters.program);
-    [ "-o"; "--output" ],
-      Some "<binary_file_prefix>",
-      [ "save the database present in the register to the specified file";
-        " (which will be given extension '.KPopCounter' unless file is '/dev/*')" ],
-      TA.Optional,
-      (fun _ -> To_file (TA.get_parameter ()) |> List.accum Parameters.program);
-    TA.make_separator_multiline [ "Miscellaneous options."; "They are set immediately." ];
+    TA.make_separator_multiline [ "Miscellaneous options."; "They are set immediately" ];
 (*
     [ "-T"; "--threads" ],
       Some "<computing_threads>",

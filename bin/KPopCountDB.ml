@@ -19,9 +19,10 @@ open KPop
 
 type to_do_t =
   | Empty
-  | Of_file of string
-  | Add_file of string
-  | Add_meta of string
+  | Of_binary of string
+  | Of_tables of string
+  | Add_binary of string
+  | Add_metadata of string
   | Combination_criterion_set of KMerDB.CombinationCriterion.t
   | Split_spectra of string
   | Add_combined_selected of string (* The new label *)
@@ -34,10 +35,10 @@ type to_do_t =
   | Selected_negate
   | Selected_print
   | Selected_clear
-  | To_file of string
-  | Table_output_zero_rows of bool
-  | Table_precision of int
-  | To_tabular of string
+  | To_binary of string
+  | Set_output_zero_kmers of bool
+  | Set_precision of int
+  | To_tables of string
   | Distance_set of Space.Distance.t
   | Distance_normalisation_set of bool
   | To_distances of regexps_t * regexps_t * string
@@ -47,7 +48,7 @@ module Defaults =
   struct
     let combination_criterion = KMerDB.CombinationCriterion.of_string "mean"
     let transformation = KMerDB.Transformation.of_string "power(1)"
-    let output_zero_rows = false
+    let output_zero_kmers = true
     let precision = 15
     let distance = Space.Distance.of_string "euclidean"
     let distance_normalise = true
@@ -86,7 +87,7 @@ let () =
     (String.Split.on_char_as_list ',' s) in
   TA.parse [
     TA.make_separator_multiline [ "Actions."; "They are executed delayed and in order of specification." ];
-    TA.make_separator_multiline [ ""; "Actions on the database register:" ];
+    TA.make_separator_multiline [ ""; "Actions on the database register - Input/Output operations:" ];
     [ "-0"; "--zero"; "--empty" ],
       None,
       [ "load an empty database into the register" ],
@@ -94,24 +95,66 @@ let () =
       (fun _ -> Empty |> List.accum Parameters.program);
     [ "-i"; "--input" ],
       Some "<binary_file_prefix>",
-      [ "load into the register the database present in the specified file";
-        " (which must have extension '.KPopCounter' unless file is '/dev/*')" ],
+      [ "load into the register the database present in the specified binary file";
+        " (which must have extension '.KPopSpectra' unless file is '/dev/*')" ],
       TA.Optional,
-      (fun _ -> Of_file (TA.get_parameter ()) |> List.accum Parameters.program);
+      (fun _ -> Of_binary (TA.get_parameter ()) |> List.accum Parameters.program);
+    [ "-I"; "--Input" ],
+      Some "<tabular_file_prefix>",
+      [ "load into the register the database present in the specified tabular files";
+        " (which must have extensions '.KPopKmerMatrix.txt' and '.KPopMetaMatrix.txt'";
+        "  unless file is '/dev/*')" ],
+      TA.Optional,
+      (fun _ -> Of_tables (TA.get_parameter ()) |> List.accum Parameters.program);
     [ "-a"; "--add" ],
       Some "<binary_file_prefix>",
-      [ "add to the register the contents of the database present in the specified file";
-        " (which must have extension '.KPopCounter' unless file is '/dev/*')" ],
+      [ "add to the register the contents of the database present in the specified";
+        "binary file";
+        " (which must have extension '.KPopSpectra' unless file is '/dev/*')" ],
       TA.Optional,
-      (fun _ -> Add_file (TA.get_parameter ()) |> List.accum Parameters.program);
+      (fun _ -> Add_binary (TA.get_parameter ()) |> List.accum Parameters.program);
     [ "-m"; "--metadata"; "--add-metadata" ],
       Some "<metadata_table_file_name>",
-      [ "add to the database present in the register metadata from the specified file.";
+      [ "add to the register metadata from the specified tabular file.";
         "Metadata should be presented as a tab-separated text table, with a header";
-        "containing metadata field labels and with row names being sample labels.";
+        "containing sample labels and with row names being metadata fields labels.";
+
+(* HOW ABOUT THE SAMPLE LABELS? *)
+
         "Metadata field names and values must not contain double quote '\"' characters" ],
       TA.Optional,
-      (fun _ -> Add_meta (TA.get_parameter ()) |> List.accum Parameters.program);
+      (fun _ -> Add_metadata (TA.get_parameter ()) |> List.accum Parameters.program);
+    [ "--summary" ],
+      None,
+      [ "print a summary of the database present in the register" ],
+      TA.Optional,
+      (fun _ -> Summary |> List.accum Parameters.program);
+    [ "-o"; "--output" ],
+      Some "<binary_file_prefix>",
+      [ "save the database present in the register to the specified file";
+        " (which will be given extension '.KPopCounter' unless file is '/dev/*')" ],
+      TA.Optional,
+      (fun _ -> To_binary (TA.get_parameter ()) |> List.accum Parameters.program);
+    [ "--precision" ],
+      Some "<positive_integer>",
+      [ "set the number of precision digits to be used for tabular output" ],
+      TA.Default (fun () -> string_of_int Defaults.precision),
+      (fun _ -> Set_precision (TA.get_parameter_int_pos ()) |> List.accum Parameters.program);
+    [ "--Output-zero-kmers"; "--Output-zero-k-mers" ],
+      Some "'true'|'false'",
+      [ "whether to output k-mers whose frequencies are all zero";
+        "when writing the database as tabular files" ],
+      TA.Default (fun () -> string_of_bool Defaults.output_zero_kmers),
+      (fun _ -> Set_output_zero_kmers (TA.get_parameter_boolean ()) |> List.accum Parameters.program);
+    [ "-O"; "--Output" ],
+      Some "<tabular_file_prefix>",
+      [ "write the database present in the register as tab-separated files.";
+        "File extensions are automatically assigned";
+        " (will be '.KPopKmerMat.txt' and '.KPopMetaMat.txt',";
+        "  unless file is '/dev/*')" ],
+      TA.Optional,
+      (fun _ -> To_tables (TA.get_parameter ()) |> List.accum Parameters.program);
+    TA.make_separator_multiline [ ""; "Actions on the database register - Other operations:" ];
     [ "--combination-criterion"; "--spectrum-combination-criterion" ],
       Some "'mean'|'median'",
       [ "set the criterion used to combine the k-mer frequencies of spectra.";
@@ -133,7 +176,7 @@ let () =
       (fun _ -> Split_spectra (TA.get_parameter ()) |> List.accum Parameters.program);
     [ "--transform" ],
       Some "TRANSFORMATION",
-      [ "replace the database with the one obtained applying the specified transformation.";
+      [ "replace the database with the one obtained from the specified transformation.";
         "Transformations are defined as follows:";
         " TRANSFORMATION := 'threshold(' <non-negative_float>')'";
         "                 | 'power(<float>)'";
@@ -163,17 +206,6 @@ let () =
       (fun _ ->
         let classes_label = TA.get_parameter () in
         Distill_kmers (classes_label, TA.get_parameter ()) |> List.accum Parameters.program);
-    [ "--summary" ],
-      None,
-      [ "print a summary of the database present in the register" ],
-      TA.Optional,
-      (fun _ -> Summary |> List.accum Parameters.program);
-    [ "-o"; "--output" ],
-      Some "<binary_file_prefix>",
-      [ "save the database present in the register to the specified file";
-        " (which will be given extension '.KPopCounter' unless file is '/dev/*')" ],
-      TA.Optional,
-      (fun _ -> To_file (TA.get_parameter ()) |> List.accum Parameters.program);
     [ "--distance"; "--distance-function" ],
       Some "'euclidean'|'minkowski(<non-negative_float>)'",
       [ "set the function to be used when computing distances.";
@@ -200,26 +232,6 @@ let () =
         let regexps_1 = TA.get_parameter () |> parse_regexp_selector "-d" in
         let regexps_2 = TA.get_parameter () |> parse_regexp_selector "-d" in
         To_distances (regexps_1, regexps_2, TA.get_parameter ()) |> List.accum Parameters.program);
-    [ "--counts-output-zero-kmers"; "--counts-output-zero-k-mers" ],
-      Some "'true'|'false'",
-      [ "whether to output k-mers whose frequencies are all zero";
-        "when writing the database as table or spectra" ],
-      TA.Default (fun () -> string_of_bool Defaults.output_zero_rows),
-      (fun _ -> Table_output_zero_rows (TA.get_parameter_boolean ()) |> List.accum Parameters.program);
-    [ "--counts-precision" ],
-      Some "<positive_integer>",
-      [ "set the number of precision digits to be used when outputting counts";
-        "as table or spectra" ],
-      TA.Default (fun () -> string_of_int Defaults.precision),
-      (fun _ -> Table_precision (TA.get_parameter_int_pos ()) |> List.accum Parameters.program);
-    [ "-t"; "--table"; "--to-table" ],
-      Some "<file_prefix>",
-      [ "write the database present in the register as a tab-separated file";
-        " (rows are k-mer names, columns are spectrum names.";
-        "  The result will be given extension '.KPopCounter.txt'";
-        "  unless file is '/dev/*')" ],
-      TA.Optional,
-      (fun _ -> To_tabular (TA.get_parameter ()) |> List.accum Parameters.program);
     TA.make_separator_multiline [ ""; "Actions involving the selection register:" ];
     [ "-L"; "--labels"; "--selection-from-labels" ],
       Some "<spectrum_label>[','...','<spectrum_label>]",
@@ -305,7 +317,7 @@ let () =
   (* These are the registers available to the program *)
   let current = KMerDB.make_empty () |> ref and selected = ref StringSet.empty
   and combination_criterion = ref Defaults.combination_criterion
-  and output_zero_rows = ref Defaults.output_zero_rows and precision = ref Defaults.precision
+  and output_zero_kmers = ref Defaults.output_zero_kmers and precision = ref Defaults.precision
   and distance = ref Defaults.distance and distance_normalise = ref Defaults.distance_normalise
   and unexpected_end_of_output_file f =
     try
@@ -317,14 +329,16 @@ let () =
       (function
         | Empty ->
           current := KMerDB.make_empty ()
-        | Of_file prefix ->
+        | Of_binary prefix ->
           current := KMerDB.of_binary ~verbose:!Parameters.verbose prefix
-        | Add_file prefix ->
+        | Of_tables prefix ->
+          current := KMerDB.of_files ~verbose:!Parameters.verbose prefix
+        | Add_binary prefix ->
           current :=
             KMerDB.of_binary ~verbose:!Parameters.verbose prefix |>
             KMerDB.merge ~verbose:!Parameters.verbose !current
-        | Add_meta path ->
-          current := KMerDB.add_meta ~verbose:!Parameters.verbose !current path
+        | Add_metadata path ->
+          current := KMerDB.add_metadata ~verbose:!Parameters.verbose !current path
         | Combination_criterion_set criterion ->
           combination_criterion := criterion
         | Split_spectra classes_label ->
@@ -358,17 +372,17 @@ let () =
           Printf.eprintf " ].\n%!"
         | Selected_clear ->
           selected := StringSet.empty
-        | Table_output_zero_rows ozr ->
-          output_zero_rows := ozr
-        | Table_precision p ->
+        | Set_output_zero_kmers ozr ->
+          output_zero_kmers := ozr
+        | Set_precision p ->
           precision := p
-        | To_tabular prefix ->
+        | To_tables prefix ->
           unexpected_end_of_output_file
             (fun () ->
-              KMerDB.to_files ~precision:!precision ~output_zero_rows:!output_zero_rows
+              KMerDB.to_files ~precision:!precision ~output_zero_kmers:!output_zero_kmers
                               ~threads:!Parameters.threads ~verbose:!Parameters.verbose
                               !current prefix)
-        | To_file prefix ->
+        | To_binary prefix ->
           unexpected_end_of_output_file
             (fun () -> KMerDB.to_binary ~verbose:!Parameters.verbose !current prefix)
         | Distance_set dist ->

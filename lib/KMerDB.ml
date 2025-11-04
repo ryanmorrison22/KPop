@@ -361,7 +361,7 @@ include (
       end
     (* *)
     exception Wrong_number_of_columns of int * int * int
-    let add_meta ?(verbose = false) db fname =
+    let add_metadata ?(verbose = false) db fname =
       let input = open_in fname and line_num = ref 0 in
       let header =
         input_line input
@@ -928,7 +928,7 @@ include (
     let make_filename_table = function
       | w when String.length w >= 5 && String.sub w 0 5 = "/dev/" -> w
       | prefix -> prefix ^ ".KPopCounter.txt"
-    let to_files ?(precision = 15) ?(output_zero_rows = false)
+    let to_files ?(precision = 15) ?(output_zero_kmers = false)
                  ?(threads = 1) ?(elements_per_step = 40000) ?(verbose = false) db prefix =
       let stats = stats_table_of_core_db ~threads ~verbose db.core
       and fname = make_filename_table prefix in
@@ -945,7 +945,7 @@ include (
         (fun i row_name ->
           (* There might be additional storage.
              Also, we only print the row if it has non-zero elements or if we are explicitly requested to do so *)
-          if i < db.core.n_rows && (stats.row_stats.(i).sum > 0. || output_zero_rows) then
+          if i < db.core.n_rows && (stats.row_stats.(i).sum > 0. || output_zero_kmers) then
             List.accum rows (row_name, i))
         db.core.idx_to_row_names;
       (*  Columns *)
@@ -1121,7 +1121,7 @@ include (
     val add_counts: t -> string -> string -> int -> t
     (* Add metadata - the first field must be the label *)
     exception Wrong_number_of_columns of int * int * int
-    val add_meta: ?verbose:bool -> t -> string -> t
+    val add_metadata: ?verbose:bool -> t -> string -> t
     (* Select column names identified by regexps on metadata fields *)
     val selected_from_regexps: ?verbose:bool -> t -> (string * Str.regexp) list -> StringSet.t
     val selected_negate: t -> StringSet.t -> StringSet.t
@@ -1154,7 +1154,7 @@ include (
     (* Output information about the contents *)
     val output_summary: ?verbose:bool -> t -> unit
     (* *)
-    val to_files: ?precision:int -> ?output_zero_rows:bool ->
+    val to_files: ?precision:int -> ?output_zero_kmers:bool ->
                   ?threads:int -> ?elements_per_step:int -> ?verbose:bool ->
                   t -> string -> unit
     val of_files: ?threads:int -> ?bytes_per_step:int -> ?verbose:bool -> string -> t

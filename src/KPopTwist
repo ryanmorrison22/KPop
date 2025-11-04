@@ -35,7 +35,7 @@ function conditional_echo {
 # We generate and split the plain text table, so that R can import it
 conditional_echo "$(date +"%c"): [1/16] Exporting table..."
 TMPDIR=$(mktemp -d -p . KPopTwist-XXXXXXXXXX)
-KPopCountDB -T "$THREADS" -i "$PREFIX_IN" --table-output-metadata false -t "${TMPDIR}/TABLE"
+KPopCountDB -T "$THREADS" -i "$PREFIX_IN" -O "${TMPDIR}/TABLE"
 
 export R_DATATABLE_NUM_PROCS_PERCENT=100
 #export R_DATATABLE_THROTTLE=1000000
@@ -109,7 +109,7 @@ cat <<'_____'
   conditional_echo("[13/16] Writing twister")
   data.table::fwrite(twister,paste0(output,".KPopTwister.txt"),row.names=TRUE,quote=TRUE,sep="\t",buffMB=64)
 _____
-) "${TMPDIR}/TABLE.KPopCounter.txt" \
+) "${TMPDIR}/TABLE.KPopKmerMat.txt" \
   "$PREFIX_OUT" "$PREFIX_OUT_KMERS" "$KMERS_KEEP" "$KMERS_SAMPLE" "$THRESHOLD_KMERS" \
   "$THREADS" "$TEMPORARIES" "$VERBOSE" 2> "${TMPDIR}/LOGGO.txt"
 
@@ -123,7 +123,7 @@ conditional_echo "$(date +"%c"): [15/16] Encoding twister..."
 KPopTwistDB -T "$THREADS" -I T "$PREFIX_OUT" -o T "$PREFIX_OUT" > "${TMPDIR}/LOGGO.txt" 2>&1
 conditional_echo "$(date +"%c"): [16/16] Cleaning up..."
 if [[ "$TEMPORARIES" == "false" ]]; then
-  rm "${TMPDIR}/TABLE.KPopCounter.txt" "${TMPDIR}/LOGGO.txt"
+  rm "${TMPDIR}/TABLE.KPopKmerMat.txt" "${TMPDIR}/TABLE.KPopMetaMat.txt" "${TMPDIR}/LOGGO.txt"
   rmdir "${TMPDIR}"
   rm "${PREFIX_OUT}.KPopTwisted.txt" "${PREFIX_OUT}.KPopInertia.txt" "${PREFIX_OUT}.KPopTwister.txt"
   if [[ "$PREFIX_OUT_KMERS" != "" ]]; then
