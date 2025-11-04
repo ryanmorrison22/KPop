@@ -920,7 +920,7 @@ include (
       let metric = Float.Array.make n_r 1.
       and matrix_1 = make_submatrix selection_1 and matrix_2 = make_submatrix selection_2 in
       Matrix.to_file ~precision ~threads ~elements_per_step ~verbose {
-        which = DMatrix;
+        which = DistMat;
         matrix =
           Matrix.Base.get_distance_rowwise ~threads ~elements_per_step ~verbose distance metric matrix_1 matrix_2
       } prefix

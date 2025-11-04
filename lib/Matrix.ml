@@ -278,21 +278,21 @@ include (
           | Inertia
           | Twisted
           | Vectors
-          | DMatrix
+          | DistMat
         let to_string = function
           | Distill -> "KPopDistill"
           | Twister -> "KPopTwister"
           | Inertia -> "KPopInertia"
           | Twisted -> "KPopTwisted"
           | Vectors -> "KPopVectors"
-          | DMatrix -> "KPopDMatrix"
+          | DistMat -> "KPopDistMat"
         let of_string = function
           | "KPopDistill" -> Distill
           | "KPopTwister" -> Twister
           | "KPopInertia" -> Inertia
           | "KPopTwisted" -> Twisted
           | "KPopVectors" -> Vectors
-          | "KPopDMatrix" -> DMatrix
+          | "KPopDistMat" -> DistMat
           | s ->
             Exception.raise_unrecognized_initializer __FUNCTION__ "archive type" s
       end
@@ -358,7 +358,7 @@ include (
           | Inertia
           | Twisted
           | Vectors (* Only used internally *)
-          | DMatrix (* Only used internally *)
+          | DistMat (* Only used internally *)
         val to_string: t -> string
         val of_string: string -> t
       end

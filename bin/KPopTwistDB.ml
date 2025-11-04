@@ -273,7 +273,7 @@ let () =
       [ "same as option '-d', but additionally output the distance matrix";
         "in tabular form.";
         "File extensions are automatically assigned";
-        " (will be '.KPopSummary.txt' and '.KPopDMatrix.txt',";
+        " (will be '.KPopSummary.txt' and '.KPopDistMat.txt',";
         "  unless file is '/dev/*')" ],
       TA.Optional,
       (fun _ ->

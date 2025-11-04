@@ -214,7 +214,7 @@ include (
       close_out output;
       if output_distance_matrix then
         Matrix.to_file ~precision ~threads ~elements_per_step ~verbose {
-          which = DMatrix;
+          which = DistMat;
           matrix = {
             row_names = row_names_2;
             col_names = row_names_1;

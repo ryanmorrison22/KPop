@@ -226,7 +226,7 @@ let () =
         "and compute and output distances between all possible pairs";
         " (metadata fields must match the regexps specified in the selector;";
         "  an empty metadata field makes the regexp match labels.";
-        "  The result will be given extension '.KPopDMatrix' unless file is '/dev/*')" ],
+        "  The result will be given extension '.KPopDistMat' unless file is '/dev/*')" ],
       TA.Optional,
       (fun _ ->
         let regexps_1 = TA.get_parameter () |> parse_regexp_selector "-d" in
