@@ -29,144 +29,97 @@ include (
     }
     let empty = { twister = Matrix.empty Twister; inertia = Matrix.empty Inertia }
     (* Strictly speaking, we return the _transposed_ of the matrix product here *)
-    exception Incompatible_twister_and_twisted
-    exception Wrong_number_of_columns of int * int * int
-    exception Header_expected of string
-    exception Float_expected of string
-    exception Duplicate_label of string
     let add_twisted_from_database
-        ?(threads = 1) ?(elements_per_step = 100) ?(verbose = false) ?(debug = false)
-        twister twisted path =
-
-      let db = KMerDB.of_binary ~verbose path in
-      assert false;
-
-
-      ignore elements_per_step; (* Not used at the moment *)
-      (* Perform some compatibility checks *)
+        ?(threads = 1) ?(elements_per_step = 100) ?(verbose = false) twister twisted path =
+      (* Perform some compatibility checks.
+         Names of dimensions must be the same for both matrices *)
       let twisted_col_names =
         if twisted.Twisted.twisted.matrix = Matrix.Base.empty then
           twister.twister.matrix.row_names
         else
           twisted.twisted.matrix.col_names in
       if twister.twister.matrix.row_names <> twisted_col_names then
-        raise Incompatible_twister_and_twisted; (* Usually there are too many k-mers to print them out *)
-      (* We invert the table for class names *)
+        Matrix.Exception.raise_incompatible_geometries __FUNCTION__
+          twister.twister.matrix.row_names twisted_col_names;
+      (* We invert the table for k-mer hashes *)
       let num_twister_cols = Array.length twister.twister.matrix.col_names in
       let twister_col_names_to_idx = Hashtbl.create num_twister_cols in
       Array.iteri
         (fun i name ->
           Hashtbl.add twister_col_names_to_idx name i)
         twister.twister.matrix.col_names;
+      let db = KMerDB.of_binary ~verbose path in
+      (* As we process spectra from the database, we have to conform its k-mers
+          to the ones in the twister. This can be done once and for all here,
+          for all spectra.
+         As a bonus, we'll learn the size of the resulting vector *)
+      let db_row_idx_to_twister_col_idx =
+        Array.map
+          (fun name ->
+            match Hashtbl.find_opt twister_col_names_to_idx name with
+            | Some idx ->
+              idx
+            | None ->
+              (* We just discard the k-mer *)
+              -1)
+          db.core.idx_to_row_names in
       (* We decompose the existing twisted matrix *)
       let res = ref StringMap.empty in
       Array.iteri
         (fun i name ->
           res := StringMap.add name twisted.twisted.matrix.data.(i) !res)
         twisted.twisted.matrix.row_names;
-      (* First we read spectra from the file.
-         We have to conform the k-mers to the ones in the twister.
-         As a bonus, we already know the size of the resulting vector *)
-      let input = open_in path |> ref and line_num = ref 0 and eof_reached = ref false
-      and labels = ref ("", "") and num_spectra = ref 0 in
+      (*  *)
+      let n_cols = db.core.n_cols in
+      let columns_per_step = max 1 (elements_per_step / n_cols) and processed_cols = ref 0 in
       (* Parallel section *)
       BiOCamLib.Processes.Parallel.process_stream_chunkwise
         (fun () ->
-          if !eof_reached then
-            raise End_of_file
-          else begin
-            let buf = ref [] in
-            (* Each file can contain one or more spectra - we read the next one *)
-            begin try
-              while true do
-                let line_s = input_line !input in
-                incr line_num;
-                let line = String.Split.on_char_as_array '\t' line_s in
-                let l = Array.length line in
-                if l <> 2 then
-                  Wrong_number_of_columns (!line_num, l, 2) |> raise;
-                (* Each file must begin with a header *)
-                if !line_num = 1 && line.(0) <> "" then
-                  Header_expected line_s |> raise;
-                if line.(0) = "" then begin
-                  (* New header *)
-                  labels := snd !labels, Matrix.Base.strip_external_quotes_and_check line.(1);
-                  if !line_num > 1 then begin
-                    incr num_spectra;
-                    raise Exit
-                  end
-                end else
-                  (* A regular line. The first element is the hash, the second one the count *)
-                  List.accum buf (line.(0), line.(1))
-              done
-            with
-            | End_of_file ->
-              close_in !input;
-              labels := snd !labels, "";
-              incr num_spectra;
-              eof_reached := true
-            | Exit ->
-              ()
-            end;
-            if verbose then
-              Printf.eprintf "%s\r(%s): File '%s': Read %d %s on %d %s.%!"
-                String.TermIO.clear __FUNCTION__ path
-                !num_spectra (String.pluralize_int ~plural:"spectra" "spectrum" !num_spectra)
-                !line_num (String.pluralize_int "line" !line_num);
-            (* The lines are passed in reverse order, but that does not really matter much
-                as the final order is determined by the twister *)
-            fst !labels, !buf
-          end)
-        (fun (label, rev_lines) ->
-          let t0 = if debug then Sys.time () else 0. in
-          let s_v = ref IntMap.empty and acc = ref 0. in
-          List.iter
-            (fun (name, v) ->
-              match Hashtbl.find_opt twister_col_names_to_idx name with
-              | Some idx ->
-                let v =
-                  try
-                    float_of_string v
-                  with _ ->
-                    Float_expected v |> raise in
-                acc := !acc +. v;
-                s_v := begin
-                  match IntMap.find_opt idx !s_v with
-                  | Some vv ->
-                    (* If there are repeated k-mers, we accumulate them *)
-                    IntMap.add idx (vv +. v) !s_v
-                  | None ->
-                    IntMap.add idx v !s_v
-                end
-              | None ->
-                (* In this case, we just discard the k-mer *)
-                ())
-            rev_lines;
-          let t1 = if debug then Sys.time () else 0. in
-          (* We first normalise and then transform the spectrum *)
-          let acc = !acc in
-          let s_v = {
-            Matrix.Base.length = num_twister_cols;
-            elements =
-              if acc <> 0. then
-                IntMap.map (fun el -> el /. acc) !s_v
-              else
-                !s_v
-          } in
-          let t2 = if debug then Sys.time () else 0. in
-          let res = Matrix.multiply_matrix_sparse_vector_single_threaded ~verbose:false twister.twister s_v in
-          let t3 = if debug then Sys.time () else 0. in
-          if debug then
-            Printf.eprintf "\nDEBUG=(lines=%d/%d/%d,%.3g,%.3g,%.3g)\n%!"
-              (List.length rev_lines) num_twister_cols (Float.Array.length res) (t1 -. t0) (t2 -. t1) (t3 -. t2);
-          label, res)
-        (fun (label, row) ->
-          (* The transformed column vector becomes a row *)
-          match StringMap.find_opt label !res with
-          | None ->
-            res := StringMap.add label row !res
-          | Some _ ->
-            Duplicate_label label |> raise)
+          if !processed_cols < n_cols then
+            let to_do = min columns_per_step (n_cols - !processed_cols) in
+            let new_processed_cols = !processed_cols + to_do in
+            let res = !processed_cols, new_processed_cols - 1 in
+            processed_cols := new_processed_cols;
+            res
+          else
+            raise End_of_file)
+        (fun (lo_col, hi_col) ->
+          let res = ref [] in
+          for i = lo_col to hi_col do
+            let s_v = ref IntMap.empty and acc = ref 0. in
+            Array.iteri
+              (fun db_row_idx twister_col_idx ->
+                if twister_col_idx <> -1 then begin
+                  let v = KMerDB.CountBAVector.(db.core.storage.(db_row_idx).@(i)) in
+                  acc := !acc +. v;
+                  s_v := IntMap.add twister_col_idx v !s_v
+                end)
+              db_row_idx_to_twister_col_idx;
+            (* We first normalise and then twist the spectrum *)
+            let acc = !acc in
+            let s_v = {
+              Matrix.Base.length = num_twister_cols;
+              elements =
+                if acc <> 0. then
+                  IntMap.map (fun el -> el /. acc) !s_v
+                else
+                  !s_v
+            } in
+            List.accum res begin
+              db.core.idx_to_col_names.(i), (* The label *)
+              Matrix.multiply_matrix_sparse_vector_single_threaded ~verbose:false twister.twister s_v
+            end
+          done;
+          !res)
+        (List.iter
+          (fun (label, row) ->
+            (* The transformed column vector becomes a row *)
+            match StringMap.find_opt label !res with
+            | None ->
+              res := StringMap.add label row !res
+            | Some _ ->
+              Exception.raise __FUNCTION__ IO_Format
+                (Printf.sprintf "Twisted spectrum '%s' is already present in the destination database" label)))
         threads;
       let n = StringMap.cardinal !res in
       let row_names = Array.make n ""
@@ -215,7 +168,6 @@ include (
     let make_filename_binary = function
       | w when String.length w >= 5 && String.sub w 0 5 = "/dev/" -> w
       | prefix -> prefix ^ ".KPopTwister"
-    exception Incompatible_archive_version of string * string
     let to_binary ?(verbose = false) t prefix =
       let path = make_filename_binary prefix in
       let output = open_out path in
@@ -236,7 +188,7 @@ include (
       let which = (input_value input: string) in
       let version = (input_value input: string) in
       if which <> "KPopTwister" || version <> archive_version then
-        Incompatible_archive_version (which, version) |> raise;
+        Matrix.Exception.raise_incompatible_archive_version __FUNCTION__ which version;
       let twister = Matrix.of_channel input in
       let inertia = Matrix.of_channel input in
       close_in input;
@@ -258,15 +210,9 @@ include (
       inertia: Matrix.t
     }
     val empty: t
-    (* *)
-    exception Incompatible_twister_and_twisted
-    exception Wrong_number_of_columns of int * int * int
-    exception Header_expected of string
-    exception Float_expected of string
-    exception Duplicate_label of string
-    val add_twisted_from_database:
-      ?threads:int -> ?elements_per_step:int -> ?verbose:bool -> ?debug:bool ->
-      t -> Twisted.t -> string -> Twisted.t
+    (* It can fail due to a number of reasons *)
+    val add_twisted_from_database: ?threads:int -> ?elements_per_step:int -> ?verbose:bool ->
+                                   t -> Twisted.t -> string -> Twisted.t
     (* *)
     val to_files: ?precision:int -> ?threads:int -> ?elements_per_step:int -> ?verbose:bool -> t -> string -> unit
     exception Mismatched_twister_files of string array * string array * string array

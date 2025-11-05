@@ -45,13 +45,13 @@ let () =
   TA.set_synopsis "-i|--input <binary_input_prefix> -o|--output <binary_output_prefix> [OPTIONS]";
   TA.parse [
     TA.make_separator "Algorithmic parameters";
-    [ "-k"; "--kmers"; "--keep"; "--keep-kmers"; "--kmers-keep" ],
+    [ "--keep"; "--keep-kmers"; "--kmers-keep" ],
       Some "<kmer_list_file>",
       [ "discard the k-mers not listed in this file before twisting the table.";
         "The file must contain one k-mer label per line and no header" ],
       TA.Default (fun () -> "keep all"),
       (fun _ -> Parameters.kmers_keep := TA.get_parameter ());
-    [ "-s"; "--sample"; "--sample-kmers"; "--kmers-sample" ],
+    [ "--sample"; "--sample-kmers"; "--kmers-sample" ],
       Some "<fractional_float>",
       [ "fraction of the k-mers to be randomly resampled and kept";
         "after parameter -k has been applied and before twisting" ],
@@ -80,7 +80,7 @@ let () =
         " (will be '.KPopTwister' and '.KPopTwisted' unless file is '/dev/*')" ],
       TA.Mandatory,
       (fun _ -> Parameters.output := TA.get_parameter ());
-    [ "-K"; "--output-kmers"; "--output-twisted-kmers" ],
+    [ "-k"; "--output-kmers"; "--output-twisted-kmers" ],
       Some "<binary_file_prefix>",
       [ "use this prefix when saving generated twisted k-mers.";
         "File extension is automatically determined";

@@ -96,7 +96,6 @@ module Parameters =
   struct
     let program = ref []
     let threads = Processes.Parallel.get_nproc () |> ref
-    let debug_twisting = ref false
     let verbose = ref false
   end
 
@@ -383,8 +382,6 @@ let () =
       [ "print version and exit" ],
       TA.Optional,
       (fun _ -> Printf.printf "%s\n%!" info.version; exit 0);
-    (* Hidden option to profile twisting *)
-    [ "--debug-twisting" ], None, [], TA.Optional, (fun _ -> Parameters.debug_twisting := true);
     (* Hidden option to emit help in markdown format *)
     [ "--markdown" ], None, [], TA.Optional, (fun _ -> TA.markdown (); exit 0);
     (* Hidden option to print exception backtrace *)
@@ -467,11 +464,10 @@ let () =
           twisted := twisted_of_files prefix
         | Add_binary_to_twisted prefix ->
           twisted := twisted_of_binary prefix |> Twisted.merge_rowwise !twisted
-        | Twist_database fname ->
+        | Twist_database prefix ->
           twisted :=
             Twister.add_twisted_from_database
-              ~threads:!Parameters.threads ~verbose:!Parameters.verbose
-              ~debug:!Parameters.debug_twisting !twister !twisted fname
+              ~threads:!Parameters.threads ~verbose:!Parameters.verbose !twister !twisted prefix
         | Register_to_binary (Twister, prefix) ->
           Twister.to_binary ~verbose:!Parameters.verbose !twister prefix
         | Register_to_binary (Twisted, prefix) ->
