@@ -85,7 +85,7 @@ include (
       idx_to_row_names: string array;
       idx_to_meta_names: string array;
       meta: string array array;
-      storage: CountBAVector.t array
+      data: CountBAVector.t array
     }
     and t = {
       core: marshalled_t;
@@ -103,7 +103,7 @@ include (
         idx_to_row_names = [||];
         idx_to_meta_names = [||];
         meta = [||];
-        storage = [||]
+        data = [||]
       };
       col_names_to_idx = StringHashtbl.create 16;
       row_names_to_idx = StringHashtbl.create 16;
@@ -134,10 +134,15 @@ include (
         db.core.idx_to_meta_names;
       Printf.eprintf "\n%!"
     (*  Utility functions  *)
-    let invert_table a =
-      let res = StringHashtbl.create (Array.length a) in
-      Array.iteri (fun i name -> StringHashtbl.add res name i) a;
-      res
+    let of_core core =
+      let invert_table a =
+        let res = StringHashtbl.create (Array.length a) in
+        Array.iteri (fun i name -> StringHashtbl.add res name i) a;
+        res in
+      { core;
+        col_names_to_idx = invert_table core.idx_to_col_names;
+        row_names_to_idx = invert_table core.idx_to_row_names;
+        meta_names_to_idx = invert_table core.idx_to_meta_names }
     (* Makes space for a new sample named label *)
     let add_empty_column_if_needed db label =
       let n_cols = !db.core.n_cols in
@@ -152,7 +157,7 @@ include (
             (* We have to resize all the relevant containers *)
             idx_to_col_names = Array.append !db.core.idx_to_col_names [| label |];
             meta = String.resize_array_array ~is_buffer:true aug_n_cols !db.core.n_meta !db.core.meta;
-            storage = CountBAVector.resize_array ~is_buffer:true aug_n_cols !db.core.n_rows !db.core.storage
+            data = CountBAVector.resize_array ~is_buffer:true aug_n_cols !db.core.n_rows !db.core.data
           }
         }
       end
@@ -173,80 +178,39 @@ include (
               res.(n_rows) <- hash;
               res
             end;
-            storage = CountBAVector.resize_array ~is_buffer:true !db.core.n_cols aug_n_rows !db.core.storage
+            data = CountBAVector.resize_array ~is_buffer:true !db.core.n_cols aug_n_rows !db.core.data
           }
         }
       end
-    (* *)
-    exception Wrong_number_of_columns of int * int * int
-    let add_metadata ?(verbose = false) db fname =
-      let input = open_in fname and line_num = ref 0 in
-      let header =
-        input_line input
-          |> String.Split.on_char_as_array '\t' |> Array.map Matrix.Base.strip_external_quotes_and_check in
-      incr line_num;
-      (* We add the names *)
-      let missing = ref [] in
-      Array.iteri
-        (fun i name ->
-          if i > 0 && StringHashtbl.mem db.meta_names_to_idx name |> not then
-            List.accum missing name)
-        header;
-      let missing = Array.of_rlist !missing in
-      let db = ref db
-      and missing_len = Array.length missing in
-      if missing_len > 0 then begin
-        Array.iteri
-          (fun i name -> !db.core.n_meta + i |> StringHashtbl.add !db.meta_names_to_idx name)
-          missing;
-        let n_meta = !db.core.n_meta + missing_len in
+    (* Makes space for a new metadata field named label *)
+    let add_empty_meta_if_needed db meta =
+      if StringHashtbl.mem !db.meta_names_to_idx meta |> not then begin
+        let n_meta = !db.core.n_meta in
+        let aug_n_meta = n_meta + 1 in
+        StringHashtbl.add !db.meta_names_to_idx meta n_meta; (* THIS ONE CHANGES !db *)
         db := {
           !db with
           core = {
             !db.core with
-            n_meta;
+            n_meta = aug_n_meta;
             (* We have to resize all the relevant containers *)
-            idx_to_meta_names = Array.append !db.core.idx_to_meta_names missing;
-            meta = String.resize_array_array ~is_buffer:true !db.core.n_cols n_meta !db.core.meta
+            idx_to_meta_names = begin
+              let res = String.resize_array ~is_buffer:true aug_n_meta !db.core.idx_to_meta_names in
+              res.(n_meta) <- meta;
+              res
+            end;
+            meta = String.resize_array_array ~is_buffer:true !db.core.n_cols aug_n_meta !db.core.meta
           }
         }
-      end;
-      let num_header_fields = Array.length header
-      and meta_indices =
-        Array.mapi
-          (fun i name ->
-            if i = 0 then
-              -1
-            else
-              StringHashtbl.find !db.meta_names_to_idx name)
-          header in
-      begin try
-        while true do
-          let line =
-            input_line input
-              |> String.Split.on_char_as_array '\t' |> Array.map Matrix.Base.strip_external_quotes_and_check in
-          incr line_num;
-          (* A regular line. The first element is the spectrum name, the others the values of meta-data fields *)
-          let l = Array.length line in
-          if l <> num_header_fields then
-            Wrong_number_of_columns (!line_num, l, num_header_fields) |> raise;
-          add_empty_column_if_needed db line.(0);
-          let col_idx = StringHashtbl.find !db.col_names_to_idx line.(0) in
-          Array.iteri
-            (fun i name_idx ->
-              if i > 0 then
-                !db.core.meta.(col_idx).(name_idx) <- line.(i))
-            meta_indices;
-          if verbose && !line_num mod 10 = 0 then
-            Printf.eprintf "%s\r(%s): File '%s': Read %d lines%!"
-              String.TermIO.clear __FUNCTION__ fname !line_num
-        done
-      with End_of_file ->
-        close_in input;
-        if verbose then
-          Printf.eprintf "%s\r(%s): File '%s': Read %d lines\n%!"
-            String.TermIO.clear __FUNCTION__ fname !line_num
-      end;
+      end
+    (* *)
+    let set_metadata db label meta s =
+      let db = ref db in
+      add_empty_column_if_needed db label;
+      add_empty_meta_if_needed db meta;
+      let col_idx = StringHashtbl.find !db.col_names_to_idx label
+      and meta_idx = StringHashtbl.find !db.meta_names_to_idx meta in
+      !db.core.meta.(col_idx).(meta_idx) <- s;
       !db
     let add_counts db label hash counts =
       let db = ref db in
@@ -254,21 +218,88 @@ include (
       add_empty_row_if_needed db hash;
       let col_idx = StringHashtbl.find !db.col_names_to_idx label
       and row_idx = StringHashtbl.find !db.row_names_to_idx hash in
-      CountBAVector.(!db.core.storage.(col_idx).+(row_idx) <- N.of_int counts);
+      CountBAVector.(!db.core.data.(col_idx).+(row_idx) <- counts);
+      !db
+    exception Wrong_number_of_columns of int * int * int
+    let add_metadata_file ?(threads = 1) ?(bytes_per_step = 4194304) ?(verbose = false) db path =
+      let module MetaIO = Matrix.Base.IO.Make (
+        struct
+          module Element =
+            struct
+              type t = string
+              let of_string s = s [@@inline]
+              let [@warning "-27"] to_string ?(precision = 15) _ = assert false
+            end
+          type t = string array
+          let create n = Array.make n ""
+          let set sa i s = sa.(i) <- s [@@inline]
+          let get_col_name _ _ = assert false
+          let get_row_name _ _ = assert false
+          let get_datum _ _ _ = assert false
+        end
+      ) in
+      let input = open_in path in
+      let meta = MetaIO.of_channel ~threads ~bytes_per_step ~verbose input in
+      close_in input;
+      (* Remember that meta is stored rowwise, but db columnwise *)
+      let n_cols = Array.length meta.col_names and n_rows = Array.length meta.row_names
+      and db = ref db and col_num = ref 0 in
+      for i = 0 to n_cols - 1 do
+        (* The names of the spectra to be added must be already present *)
+        let label = meta.col_names.(i) in
+        if StringHashtbl.mem !db.col_names_to_idx label |> not then
+          Exception.raise __FUNCTION__ IO_Format
+            (Printf.sprintf "Spectrum '%s' is missing in the target database" label);
+        (* We add the metadata associated with the sample *)
+        for j = 0 to n_rows - 1 do
+          db := set_metadata !db label meta.row_names.(j) meta.data.(j).(i)
+        done;
+        if verbose && !col_num mod 5 = 0 then
+          Printf.eprintf "%s\r(%s): Annotated %d/%d %s%!"
+            String.TermIO.clear __FUNCTION__ !col_num n_cols
+              (String.pluralize_int ~plural:"spectra" "spectrum" !col_num);
+        incr col_num
+      done;
+      if verbose then
+        Printf.eprintf "%s\r(%s): Annotated %d/%d %s.\n%!"
+          String.TermIO.clear __FUNCTION__ !col_num n_cols
+            (String.pluralize_int ~plural:"spectra" "spectrum" !col_num);
       !db
     let merge ?(verbose = false) db1 db2 =
-
-      ignore (verbose, db1, db2);
-
-      (*let area_1 = db_1.core.n_cols*)
-
-
-      (* It's OK to merge DBs with different k-mer sets, but they must have identical metadata rows *)
-
-
-      assert false
-
-    (* *)
+      let lines1 = db1.core.n_rows + db1.core.n_meta
+      and lines2 = db2.core.n_rows + db2.core.n_meta in
+      let area1 = db1.core.n_cols * lines1
+      and area2 = db2.core.n_cols * lines2 in
+      let base, suppl, lines =
+        if area1 > area2 then
+          ref db1, db2, lines2
+        else
+          ref db2, db1, lines1
+      and line_num = ref 0 in
+      for i = 0 to suppl.core.n_cols - 1 do
+        (* The names of the spectra to be added must not be already present *)
+        let label = suppl.core.idx_to_col_names.(i) in
+        if StringHashtbl.mem !base.col_names_to_idx label then
+          Exception.raise __FUNCTION__ IO_Format
+            (Printf.sprintf "Spectrum '%s' is already present in the target database" label);
+        (* We add the counts associated with the sample *)
+        for j = 0 to suppl.core.n_rows - 1 do
+          base := add_counts !base label suppl.core.idx_to_row_names.(j) CountBAVector.(suppl.core.data.(i).@(j))
+        done;
+        (* We add the metadata associated with the sample *)
+        for j = 0 to suppl.core.n_meta - 1 do
+          base := set_metadata !base label suppl.core.idx_to_meta_names.(j) suppl.core.meta.(i).(j)
+        done;
+        if verbose && !line_num mod 10 = 0 then
+          Printf.eprintf "%s\r(%s): Merged %d/%d %s%!"
+            String.TermIO.clear __FUNCTION__ !line_num lines (String.pluralize_int "line" !line_num);
+        incr line_num
+      done;
+      if verbose then
+        Printf.eprintf "%s\r(%s): Merged %d/%d %s.\n%!"
+          String.TermIO.clear __FUNCTION__ !line_num lines (String.pluralize_int "line" !line_num);
+      !base
+    (* Some basic operations on sample names *)
     let selected_from_regexps ?(verbose = false) db regexps =
       (* We iterate over the columns *)
       if verbose then
@@ -318,16 +349,13 @@ include (
       let idxs = IntSet.elements_array !idxs in
       let n = Array.length idxs in
       let filter_array a = Array.init n (fun i -> a.(idxs.(i))) in
-      let core =
-        { db.core with
-          n_cols = n;
-          idx_to_col_names = filter_array db.core.idx_to_col_names;
-          meta = filter_array db.core.meta;
-          storage = filter_array db.core.storage } in
-      { core = core;
-        col_names_to_idx = invert_table core.idx_to_col_names;
-        row_names_to_idx = invert_table core.idx_to_row_names;
-        meta_names_to_idx = invert_table core.idx_to_meta_names }
+      of_core {
+        db.core with
+        n_cols = n;
+        idx_to_col_names = filter_array db.core.idx_to_col_names;
+        meta = filter_array db.core.meta;
+        data = filter_array db.core.data
+      }
     (* *)
     let archive_version = "2025-10-20"
     (* *)
@@ -348,7 +376,7 @@ include (
         idx_to_row_names = String.resize_array ~is_buffer:false db.core.n_rows db.core.idx_to_row_names;
         idx_to_meta_names = String.resize_array ~is_buffer:false db.core.n_meta db.core.idx_to_meta_names;
         meta = String.resize_array_array ~is_buffer:false db.core.n_cols db.core.n_meta db.core.meta;
-        storage = CountBAVector.resize_array ~is_buffer:false db.core.n_cols db.core.n_rows db.core.storage
+        data = CountBAVector.resize_array ~is_buffer:false db.core.n_cols db.core.n_rows db.core.data
       };
       close_out output;
       if verbose then
@@ -370,10 +398,7 @@ include (
       close_in input;
       if verbose then
         Printf.eprintf " done.\n%!";
-      { core = core;
-        col_names_to_idx = invert_table core.idx_to_col_names;
-        row_names_to_idx = invert_table core.idx_to_row_names;
-        meta_names_to_idx = invert_table core.idx_to_meta_names }
+      of_core core
   end: sig
     module CountBAVector:
       sig
@@ -381,8 +406,10 @@ include (
         val resize: ?is_buffer:bool -> int -> t -> t
       end
     (* Conceptually, each k-mer spectrum is stored as a column, even though in practice we store the transposed matrix -
-        i.e., storage is a vector of spectra *)
+        i.e., data is a vector of spectra *)
     type marshalled_t = {
+      (* We need to keep explicit lengths here because the actual vector length might be
+          greater due to buffering. So these are the authoritative lengths *)
       n_cols: int; (* The number of spectra *)
       n_rows: int; (* The number of k-mers *)
       n_meta: int; (* The number of metadata fields *)
@@ -390,9 +417,9 @@ include (
       idx_to_col_names: string array;
       idx_to_row_names: string array;
       idx_to_meta_names: string array;
-      (* *)
+      (* Stored condition/sample-wise, i.e., column-wise *)
       meta: string array array; (* Dims = n_cols * n_meta *)
-      storage: CountBAVector.t array (* Frequencies are stored as integers. Dims = n_cols * n_rows *)
+      data: CountBAVector.t array (* Frequencies are stored as integers. Dims = n_cols * n_rows *)
     }
     and t = {
       core: marshalled_t;
@@ -402,14 +429,24 @@ include (
       meta_names_to_idx: int StringHashtbl.t (* Metadata fields *)
     }
     val make_empty: unit -> t
-    val merge: ?verbose:bool -> t -> t -> t
+    (* Reconstruct non-core inverted hashes *)
+    val of_core: marshalled_t -> t
+    (* Make space for a new sample *)
     val add_empty_column_if_needed: t ref -> string -> unit
+    (* Make space for a new metadata label *)
+    val add_empty_meta_if_needed: t ref -> string -> unit
+    (* Make space for a new k-mer *)
     val add_empty_row_if_needed: t ref -> string -> unit
-    (* Increase the counts for the specified sample and k-mer by the given amount *)
-    val add_counts: t -> string -> string -> int -> t
+    (* Replace the entry for the specified sample and metadata label with the given string.
+       Allocates space if needed *)
+    val set_metadata: t -> string -> string -> string -> t
+    (* Increase the counts for the specified sample and k-mer by the given amount.
+       Allocates space if needed *)
+    val add_counts: t -> string -> string -> float -> t
+    val merge: ?verbose:bool -> t -> t -> t
     (* Add metadata - the first field must be the label *)
     exception Wrong_number_of_columns of int * int * int
-    val add_metadata: ?verbose:bool -> t -> string -> t
+    val add_metadata_file: ?threads:int -> ?bytes_per_step:int -> ?verbose:bool -> t -> string -> t
     (* Select column names identified by regexps on metadata fields *)
     val selected_from_regexps: ?verbose:bool -> t -> (string * Str.regexp) list -> StringSet.t
     val selected_negate: t -> StringSet.t -> StringSet.t
@@ -417,7 +454,7 @@ include (
     val remove_selected: t -> StringSet.t -> t
     (* Output information about the contents *)
     val output_summary: ?verbose:bool -> t -> unit
-    (* *)
+    (* Input/Output *)
     val to_binary: ?verbose:bool -> t -> string -> unit
     val of_binary: ?verbose:bool -> string -> t (* Can fail due to archive version *)
   end

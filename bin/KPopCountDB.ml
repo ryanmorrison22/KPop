@@ -63,8 +63,8 @@ module Parameters =
 
 let info = {
   Tools.Argv.name = "KPopCountDB";
-  version = "52";
-  date = "03-Nov-2025"
+  version = "53";
+  date = "09-Nov-2025"
 } and authors = [
   "2020-2025", "Paolo Ribeca", "paolo.ribeca@gmail.com"
 ]
@@ -102,7 +102,7 @@ let () =
     [ "-I"; "--Input" ],
       Some "<tabular_file_prefix>",
       [ "load into the register the database present in the specified tabular files";
-        " (which must have extensions '.KPopKmerMatrix.txt' and '.KPopMetaMatrix.txt'";
+        " (which must have extensions '.KPopKMatrix.txt' and '.KPopMMatrix.txt'";
         "  unless file is '/dev/*')" ],
       TA.Optional,
       (fun _ -> Of_tables (TA.get_parameter ()) |> List.accum Parameters.program);
@@ -117,11 +117,9 @@ let () =
       Some "<metadata_table_file_name>",
       [ "add to the register metadata from the specified tabular file.";
         "Metadata should be presented as a tab-separated text table, with a header";
-        "containing sample labels and with row names being metadata fields labels.";
-
-(* HOW ABOUT THE SAMPLE LABELS? *)
-
-        "Metadata field names and values must not contain double quote '\"' characters" ],
+        "containing spectrum labels and with row names being metadata fields labels.";
+        "Spectrum labels, metadata field names and metadata values must not contain";
+        "double quote '\"' characters" ],
       TA.Optional,
       (fun _ -> Add_metadata (TA.get_parameter ()) |> List.accum Parameters.program);
     [ "--summary" ],
@@ -150,7 +148,7 @@ let () =
       Some "<tabular_file_prefix>",
       [ "write the database present in the register as tab-separated files.";
         "File extensions are automatically assigned";
-        " (will be '.KPopKmerMat.txt' and '.KPopMetaMat.txt',";
+        " (will be '.KPopKMatrix.txt' and '.KPopMMatrix.txt',";
         "  unless file is '/dev/*')" ],
       TA.Optional,
       (fun _ -> To_tables (TA.get_parameter ()) |> List.accum Parameters.program);
@@ -226,7 +224,7 @@ let () =
         "and compute and output distances between all possible pairs";
         " (metadata fields must match the regexps specified in the selector;";
         "  an empty metadata field makes the regexp match labels.";
-        "  The result will be given extension '.KPopDistMat' unless file is '/dev/*')" ],
+        "  The result will be given extension '.KPopDMatrix' unless file is '/dev/*')" ],
       TA.Optional,
       (fun _ ->
         let regexps_1 = TA.get_parameter () |> parse_regexp_selector "-d" in
@@ -332,13 +330,13 @@ let () =
         | Of_binary prefix ->
           current := KMerDB.of_binary ~verbose:!Parameters.verbose prefix
         | Of_tables prefix ->
-          current := KMerDB.of_files ~verbose:!Parameters.verbose prefix
+          current := KMerDB.of_files ~threads:!Parameters.threads ~verbose:!Parameters.verbose prefix
         | Add_binary prefix ->
           current :=
             KMerDB.of_binary ~verbose:!Parameters.verbose prefix |>
             KMerDB.merge ~verbose:!Parameters.verbose !current
         | Add_metadata path ->
-          current := KMerDB.add_metadata ~verbose:!Parameters.verbose !current path
+          current := KMerDB.add_metadata_file ~threads:!Parameters.threads ~verbose:!Parameters.verbose !current path
         | Combination_criterion_set criterion ->
           combination_criterion := criterion
         | Split_spectra classes_label ->

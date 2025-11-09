@@ -19,103 +19,149 @@ module Processes = BiOCamLib.Processes
 module Tools = BiOCamLib.Tools*)
 open BiOCamLib.Better
 
+module Transformation:
+  sig
+    module Statistics:
+      sig
+        type t = {
+          non_zero: int;
+          min: int;
+          max: int;
+          sum: float;
+          sum_log: float
+        }
+        type table_t = {
+          col_stats: t array;
+          row_stats: t array
+        }
+      end
+    (* Transformation function *)
+    type t =
+      (* Thresholds in the interval (0.,1.) are taken as relative ones *)
+      | Threshold of float
+      | Power of float
+      | CLR
+      | Pseudo of float * bool (* The boolean is whether to quantise *)
+    val of_string: string -> t
+    val to_string: t -> string
+    val compute: which:t -> col_num:int -> col_stats:Statistics.t -> row_num:int -> row_stats:Statistics.t ->
+                 float -> float
+  end
+= struct
+    module Statistics =
+      struct
+        type t = {
+          non_zero: int;
+          min: int;
+          max: int;
+          sum: float;
+          sum_log: float
+        }
+        type table_t = {
+          col_stats: t array;
+          row_stats: t array
+        }
+      end
+    type t =
+      | Threshold of float
+      | Power of float
+      | CLR
+      | Pseudo of float * bool
+    let raise __FUNCTION__ kind s =
+      Exception.raise __FUNCTION__ IO_Format (Printf.sprintf "%s transformation '%s'" kind s)
+    let of_string_re = Str.regexp "[(,)]"
+    let of_string s =
+      let raise kind = raise __FUNCTION__ kind s in
+      try
+        match Str.full_split of_string_re s with
+        | [ Text "threshold"; Delim "("; Text threshold; Delim ")" ] ->
+          Threshold (float_of_string threshold)
+        | [ Text "pow"; Delim "("; Text power; Delim ")" ]
+        | [ Text "power"; Delim "("; Text power; Delim ")" ] ->
+          Power (float_of_string power)
+        | [ Text "binary" ] ->
+          Power 0.
+        | [ Text "clr" ] | [ Text "CLR" ] ->
+          CLR
+        | [ Text "pseudo"; Delim "("; Text power; Delim ","; Text quantize; Delim ")" ]
+        | [ Text "pseudocounts"; Delim "("; Text power; Delim ","; Text quantize; Delim ")" ] ->
+          let power = float_of_string power in
+          let res = Pseudo (power, bool_of_string quantize) in
+          if power < 0. then
+            raise "Invalid";
+          res
+        | _ ->
+          raise "Unknown"
+      with _ ->
+        raise "Unknown"
+    let to_string = function
+      | Threshold threshold ->
+        Printf.sprintf "threshold(%g)" threshold
+      | Power power ->
+        Printf.sprintf "power(%g)" power
+      | CLR ->
+        "clr"
+      | Pseudo (power, quantize) ->
+        Printf.sprintf "pseudocounts(%g,%b)" power quantize
+    let [@warning "-27"] compute ~which ~col_num ~col_stats ~row_num ~row_stats counts =
+      match which with
+      | Threshold threshold ->
+        let threshold =
+          if threshold < 1. then
+            threshold *. col_stats.Statistics.sum
+          else
+            threshold in
+        if counts >= threshold then
+          counts
+        else
+          0.
+      | Power 1. -> (* Optimisation *)
+        counts
+      | Power power ->
+        counts ** power
+      | CLR ->
+        (float_of_int col_stats.max +. 1.) *. log (counts +. 1.)
+      | Pseudo (power, quantize) ->
+        if power < 0. then
+          to_string which |> raise __FUNCTION__ "Invalid";
+        let v =
+          if power = 0. then
+            (float_of_int col_stats.max +. 1.) *. log (counts +. 1.)
+          else begin
+            if power < 1. then
+              (counts ** power) *. ((float_of_int col_stats.max) ** (1. -. power)) /. power
+            else
+              (counts ** power)
+          end in
+        if quantize then
+          floor v
+        else
+          v
+  end
+
+module CombinationCriterion:
+  sig
+    type t = RescaledMean | RescaledMedian
+    val of_string: string -> t
+    val to_string: t -> string
+  end
+= struct
+    type t = RescaledMean | RescaledMedian
+    let of_string = function
+      | "mean" -> RescaledMean
+      | "median" -> RescaledMedian
+      | s ->
+        Exception.raise_unrecognized_initializer __FUNCTION__ "Combination criterion" s
+    let to_string = function
+      | RescaledMean -> "mean"
+      | RescaledMedian -> "median"
+  end
+
 include (
   struct
     include KMerDB_Base
     let ( .@() ) = CountBAVector.( .@() )
     let ( .@()<- ) = CountBAVector.( .@()<- )
-    module Transformation =
-      struct
-        module Statistics =
-          struct
-            type t = {
-              non_zero: int;
-              min: int;
-              max: int;
-              sum: float;
-              sum_log: float
-            }
-            type table_t = {
-              col_stats: t array;
-              row_stats: t array
-            }
-          end
-        type t =
-          | Threshold of float
-          | Power of float
-          | CLR
-          | Pseudo of float * bool
-        let raise __FUNCTION__ kind s =
-          Exception.raise __FUNCTION__ IO_Format (Printf.sprintf "%s transformation '%s'" kind s)
-        let of_string_re = Str.regexp "[(,)]"
-        let of_string s =
-          let raise kind = raise __FUNCTION__ kind s in
-          try
-            match Str.full_split of_string_re s with
-            | [ Text "threshold"; Delim "("; Text threshold; Delim ")" ] ->
-              Threshold (float_of_string threshold)
-            | [ Text "pow"; Delim "("; Text power; Delim ")" ]
-            | [ Text "power"; Delim "("; Text power; Delim ")" ] ->
-              Power (float_of_string power)
-            | [ Text "binary" ] ->
-              Power 0.
-            | [ Text "clr" ] | [ Text "CLR" ] ->
-              CLR
-            | [ Text "pseudo"; Delim "("; Text power; Delim ","; Text quantize; Delim ")" ]
-            | [ Text "pseudocounts"; Delim "("; Text power; Delim ","; Text quantize; Delim ")" ] ->
-              let power = float_of_string power in
-              let res = Pseudo (power, bool_of_string quantize) in
-              if power < 0. then
-                raise "Invalid";
-              res
-            | _ ->
-              raise "Unknown"
-          with _ ->
-            raise "Unknown"
-        let to_string = function
-          | Threshold threshold ->
-            Printf.sprintf "threshold(%g)" threshold
-          | Power power ->
-            Printf.sprintf "power(%g)" power
-          | CLR ->
-            "clr"
-          | Pseudo (power, quantize) ->
-            Printf.sprintf "pseudocounts(%g,%b)" power quantize
-        let [@warning "-27"] compute ~which ~col_num ~col_stats ~row_num ~row_stats counts =
-          match which with
-          | Threshold threshold ->
-            let threshold =
-              if threshold < 1. then
-                threshold *. col_stats.Statistics.sum
-              else
-                threshold in
-            if counts >= threshold then
-              counts
-            else
-              0.
-          | Power 1. -> (* Optimisation *)
-            counts
-          | Power power ->
-            counts ** power
-          | CLR ->
-            (float_of_int col_stats.max +. 1.) *. log (counts +. 1.)
-          | Pseudo (power, quantize) ->
-            if power < 0. then
-              to_string which |> raise __FUNCTION__ "Invalid";
-            let v =
-              if power = 0. then
-                (float_of_int col_stats.max +. 1.) *. log (counts +. 1.)
-              else begin
-                if power < 1. then
-                  (counts ** power) *. ((float_of_int col_stats.max) ** (1. -. power)) /. power
-                else
-                  (counts ** power)
-              end in
-            if quantize then
-              floor v
-            else
-              v
-    end
     (* Helper module *)
     module ColOrRow =
       struct
@@ -140,9 +186,9 @@ include (
           let v =
             match what with
             | Col ->
-              CountBAVector.N.to_int core.storage.(n).@(i)
+              CountBAVector.N.to_int core.data.(n).@(i)
             | Row ->
-              CountBAVector.N.to_int core.storage.(i).@(n) in
+              CountBAVector.N.to_int core.data.(i).@(n) in
           let f_v = float_of_int v in
           if f_v >= 0. then
             incr non_zero;
@@ -212,7 +258,7 @@ include (
       let transform = Transformation.compute ~which:transformation
       and stats = stats_table_of_core_db ~threads ~verbose db.core
       and n_rows = db.core.n_rows and n_cols = db.core.n_cols
-      and new_storage = Array.copy db.core.storage and processed_cols = ref 0 in
+      and new_data = Array.copy db.core.data and processed_cols = ref 0 in
       Processes.Parallel.process_stream_chunkwise
         (fun () ->
           if !processed_cols < n_cols then
@@ -233,13 +279,13 @@ include (
                   transform
                     ~col_num:n_cols ~col_stats:stats.col_stats.(col_idx)
                     ~row_num:n_rows ~row_stats:stats.row_stats.(row_idx) n)
-                db.core.storage.(col_idx)
+                db.core.data.(col_idx)
             end
           done;
           !res)
         (List.iter
           (fun (col_idx, col) ->
-            new_storage.(col_idx) <- col;
+            new_data.(col_idx) <- col;
             incr processed_cols;
             if verbose then
               Printf.eprintf "%s\r(%s): Transforming database: done %d/%d %s%!"
@@ -250,20 +296,7 @@ include (
         Printf.eprintf "%s\r(%s): Transforming database: done %d/%d %s.\n%!"
           String.TermIO.clear __FUNCTION__ n_cols n_cols
           (String.pluralize_int "column" n_cols);
-      { db with core = { db.core with storage = new_storage } }
-    (* *)
-    module CombinationCriterion =
-      struct
-        type t = RescaledMean | RescaledMedian
-        let of_string = function
-          | "mean" -> RescaledMean
-          | "median" -> RescaledMedian
-          | s ->
-            Exception.raise_unrecognized_initializer __FUNCTION__ "Combination criterion" s
-        let to_string = function
-          | RescaledMean -> "mean"
-          | RescaledMedian -> "median"
-      end
+      { db with core = { db.core with data = new_data } }
     (* It should be OK to have the same label on both LHS and RHS,
         as a temporary vector is used to generate the combination *)
     let add_combined_selected ?(threads = 1) ?(elements_per_step = 10000) ?(verbose = false)
@@ -274,7 +307,7 @@ include (
       (* We allocate the result *)
       add_empty_column_if_needed db new_label;
       let new_col_idx = StringHashtbl.find !db.col_names_to_idx new_label in
-      let new_col = !db.core.storage.(new_col_idx) in
+      let new_col = !db.core.data.(new_col_idx) in
       (* Computing valid labels and maximum normalisation across columns *)
       let found_cols = ref [] and max_norm = ref 0. in
       StringSet.iter
@@ -314,11 +347,11 @@ include (
             Array.iter
               (fun col_idx ->
                 (* We normalise columns *separately* before combining them *)
-                let col = !db.core.storage.(col_idx) and norm = stats.col_stats.(col_idx).sum in
+                let col = !db.core.data.(col_idx) and norm = stats.col_stats.(col_idx).sum in
                 (* All counts are non-negative *)
                 if norm > 0. then
                   (* We add the renormalised sum to the suitable row histogram *)
-                  CountBAVector.N.to_float col.@(i) *. max_norm /. norm |> Freqs.add row_combinators.(i - lo_row))
+                  col.@(i) *. max_norm /. norm |> Freqs.add row_combinators.(i - lo_row))
               found_cols
           done;
           (* For each row histogram in the input range, we now generate a combination and pass it along *)
@@ -336,8 +369,7 @@ include (
           for i = lo_row to lo_row + n_processed - 1 do
             let res_i = block.(i - lo_row) in
             Numbers.Float.(norm ++ res_i);
-            let res_i = CountBAVector.N.of_float res_i in
-            (* Actual copy to storage *)
+            (* Actual copy to data *)
             new_col.@(i) <- res_i
           done;
           let old_processed_rows = !processed_rows in
@@ -469,11 +501,11 @@ include (
               for i = 0 to n_samples - 1 do
                 let ind_class_i = ind_classes.(i)
                 (* Counts must be normalised *)
-                and counts_i = N.to_float db.core.storage.(i).@(kmer) /. stats_table.col_stats.(i).sum in
+                and counts_i = N.to_float db.core.data.(i).@(kmer) /. stats_table.col_stats.(i).sum in
                 for j = i + 1 to n_samples - 1 do
                   let ind_class_j = ind_classes.(j)
                   (* Counts must be normalised *)
-                  and counts_j = N.to_float db.core.storage.(j).@(kmer) /. stats_table.col_stats.(j).sum in
+                  and counts_j = N.to_float db.core.data.(j).@(kmer) /. stats_table.col_stats.(j).sum in
                   let diff = Float.abs (counts_i -. counts_j) in
                   if ind_class_i = ind_class_j then
                     Stats.add stats_classes.(ind_class_i).(ind_class_j) diff
@@ -618,23 +650,31 @@ include (
                 Printf.eprintf "Norm@%d=%g\n%!" idx norm;
                 *)
                 Float.Array.init n_r
-                  (fun j -> CountBAVector.N.to_float db.core.storage.(idx).@(j) /. norm)) } in
+                  (fun j -> CountBAVector.N.to_float db.core.data.(idx).@(j) /. norm)) } in
       let metric = Float.Array.make n_r 1.
       and matrix_1 = make_submatrix selection_1 and matrix_2 = make_submatrix selection_2 in
       Matrix.to_file ~precision ~threads ~elements_per_step ~verbose {
-        which = DistMat;
+        which = DMatrix;
         matrix =
           Matrix.Base.get_distance_rowwise ~threads ~elements_per_step ~verbose distance metric matrix_1 matrix_2
       } prefix
-    (* *)
-    let make_filename_table = function
+    (* The following functions implement tabular I/O.
+       Due to historical reasons (mostly the fact that the CA implementation in R
+        wants the table that way) these are laid out as the _transpose_ of the internal
+        data, which complicates things a bit when reading things.
+       This might disappear in the future, in particular if we switch to a native
+        implementation of CA *)
+    let make_filename_meta_table = function
       | w when String.length w >= 5 && String.sub w 0 5 = "/dev/" -> w
-      | prefix -> prefix ^ ".KPopCounter.txt"
+      | prefix -> prefix ^ ".KPopMMatrix.txt"
+    let make_filename_kmer_table = function
+      | w when String.length w >= 5 && String.sub w 0 5 = "/dev/" -> w
+      | prefix -> prefix ^ ".KPopKMatrix.txt"
     let to_files ?(precision = 15) ?(output_zero_kmers = false)
                  ?(threads = 1) ?(elements_per_step = 40000) ?(verbose = false) db prefix =
+      (* Needed to understand whether to print k-mers or not *)
       let stats = stats_table_of_core_db ~threads ~verbose db.core
-      and fname = make_filename_table prefix in
-      let output = open_out fname and meta = ref [] and rows = ref [] and cols = ref [] in
+      and meta = ref [] and rows = ref [] and cols = ref [] in
       (* We determine which rows and colunms should be output after all filters have been applied *)
       (*  Rows: metadata and k-mers *)
       Array.iteri
@@ -658,97 +698,118 @@ include (
             List.accum cols (col_name, i))
         db.core.idx_to_col_names;
       let meta = Array.of_rlist !meta and rows = Array.of_rlist !rows and cols = Array.of_rlist !cols in
-      let n_rows = Array.length rows and n_cols = Array.length cols in
-      (* There must be at least one row to print.
-         If there are no columns, we just print metadata/row names  *)
-      if (Array.length meta + n_rows) > 0 then begin
-        (* We print column names *)
-        Array.iter
-          (fun (col_name, _) -> Printf.fprintf output "\t%s" col_name)
-          cols;
-        Printf.fprintf output "\n";
-        (* We print metadata as lines *)
-        Array.iter
-          (fun (meta_name, meta_idx) ->
-            Printf.fprintf output "%s" meta_name;
-            Array.iter
-              (fun (_, col_idx) -> Printf.fprintf output "\t%s" db.core.meta.(col_idx).(meta_idx))
-              cols;
-            Printf.fprintf output "\n")
-          meta;
-        Printf.fprintf output "%!";
-        let processed_rows = ref 0 and buf = Buffer.create 1048576 in
-        Processes.Parallel.process_stream_chunkwise
-          (fun () ->
-            if !processed_rows < n_rows then
-              let to_do = max 1 (elements_per_step / (max 1 n_cols)) |> min (n_rows - !processed_rows) in
-              let new_processed_rows = !processed_rows + to_do in
-              let res = !processed_rows, new_processed_rows - 1 in
-              processed_rows := new_processed_rows;
-              res
-            else
-              raise End_of_file)
-          (fun (lo_row, hi_row) ->
-            Buffer.clear buf;
-            for i = lo_row to hi_row do
-              let row_name, row_idx = rows.(i) in
-              Printf.bprintf buf "%s" row_name;
-              Array.iter
-                (fun (_, col_idx) ->
-                  Printf.bprintf buf "\t%.*g" precision db.core.storage.(col_idx).@(row_idx))
-                cols;
-              Printf.bprintf buf "\n"
-            done;
-            hi_row - lo_row + 1, Buffer.contents buf)
-          (fun (n_processed, block) ->
-            Printf.fprintf output "%s" block;
-            let old_processed_rows = !processed_rows in
-            processed_rows := !processed_rows + n_processed;
-            if verbose && !processed_rows / 10000 > old_processed_rows / 10000 then
-              Printf.eprintf "%s\r(%s): Writing table to file '%s': done %d/%d lines%!"
-                String.TermIO.clear __FUNCTION__ fname !processed_rows n_rows)
-          threads;
-        if verbose then
-          Printf.eprintf "%s\r(%s): Writing table to file '%s': done %d/%d lines.\n%!"
-            String.TermIO.clear __FUNCTION__ fname n_rows n_rows
-      end;
-      close_out output
-    let of_files ?(threads = 1) ?(bytes_per_step = 4194304) ?(verbose = false) prefix =
-
-      ignore (threads, bytes_per_step, verbose, prefix);
-
-
-      make_empty ()
-
-
-
-
-
+      let n_rows = Array.length rows and n_meta = Array.length meta and n_cols = Array.length cols in
+      (* There must be at least one metadata/row/column name to print *)
+      if (n_meta + n_rows) > 0 || n_cols > 0 then begin
+        let module MetaIO = Matrix.Base.IO.Make (
+          struct
+            module Element =
+              struct
+                type t = string
+                let of_string _ = assert false
+                let [@warning "-27"] to_string ?(precision = 15) s = s [@@inline]
+              end
+            type t = string array
+            let create _ = assert false
+            let set _ _ _ = assert false
+            let get_col_name _ i = cols.(i) |> fst [@@inline]
+            let get_row_name _ i = meta.(i) |> fst [@@inline]
+            let get_datum _ i j =
+              (* Remember that we are writing out the _transposed_ matrix *)
+              let i = meta.(i) |> snd and j = cols.(j) |> snd in
+              db.core.meta.(j).(i)
+          end
+        ) in
+        let output = make_filename_meta_table prefix |> open_out in
+        MetaIO.to_channel ~precision ~threads ~elements_per_step ~verbose (MetaIO.Virtual (n_meta, n_cols)) output;
+        close_out output;
+        let module KmerIO = Matrix.Base.IO.Make (
+          struct
+            module Element =
+              struct
+                type t = float
+                let of_string _ = assert false
+                let to_string ?(precision = 15) = Printf.sprintf "%.*g" precision
+              end
+            type t = CountBAVector.t
+            let create _ = assert false
+            let set _ _ _ = assert false
+            let get_col_name _ i = cols.(i) |> fst [@@inline]
+            let get_row_name _ i = rows.(i) |> fst [@@inline]
+            let get_datum _ i j =
+              (* Remember that we are writing out the _transposed_ matrix *)
+              let i = rows.(i) |> snd and j = cols.(j) |> snd in
+              db.core.data.(j).@(i)
+          end
+        ) in
+        let output = make_filename_kmer_table prefix |> open_out in
+        KmerIO.to_channel ~precision ~threads ~elements_per_step ~verbose (KmerIO.Virtual (n_rows, n_cols)) output;
+        close_out output
+      end
+    let of_files ?(threads = 1) ?(bytes_per_step = 4194304) ?(elements_per_step = 10000) ?(verbose = false) prefix =
+      let module MetaIO = Matrix.Base.IO.Make (
+        struct
+          module Element =
+            struct
+              type t = string
+              let of_string s = s [@@inline]
+              let [@warning "-27"] to_string ?(precision = 15) _ = assert false
+            end
+          type t = string array
+          let create n = Array.make n ""
+          let set sa i s = sa.(i) <- s [@@inline]
+          let get_col_name _ _ = assert false
+          let get_row_name _ _ = assert false
+          let get_datum _ _ _ = assert false
+        end
+      ) in
+      let input = make_filename_meta_table prefix |> open_in in
+      let meta = MetaIO.of_channel ~threads ~bytes_per_step ~verbose input in
+      close_in input;
+      let module KmerIO = Matrix.Base.IO.Make (
+        struct
+          module Element =
+            struct
+              type t = float
+              let of_string = float_of_string
+              let [@warning "-27"] to_string ?(precision = 15) _ = assert false
+            end
+          type t = CountBAVector.t
+          let create n = CountBAVector.make n CountBAVector.N.zero
+          let set = CountBAVector.set
+          let get_col_name _ _ = assert false
+          let get_row_name _ _ = assert false
+          let get_datum _ _ _ = assert false
+        end
+      ) in
+      let input = make_filename_kmer_table prefix |> open_in in
+      let kmer = KmerIO.of_channel ~threads ~bytes_per_step ~verbose input in
+      close_in input;
+      (* Remember that the matrices we have just read are the _transposed_ of what
+          we need to store *)
+      let meta = MetaIO.transpose ~threads ~elements_per_step ~verbose meta
+      and kmer = KmerIO.transpose ~threads ~elements_per_step ~verbose kmer in
+      (* Perform some compatibility check. Row names must be the same, or absent *)
+      if meta.row_names <> kmer.row_names && meta.row_names <> [||] && kmer.row_names <> [||] then
+        Matrix.Exception.raise_incompatible_geometries __FUNCTION__
+          meta.row_names kmer.row_names;
+      of_core {
+        n_cols = Array.length meta.row_names;
+        n_rows = Array.length kmer.col_names;
+        n_meta = Array.length meta.col_names;
+        idx_to_col_names = meta.row_names;
+        idx_to_row_names = kmer.col_names;
+        idx_to_meta_names = meta.col_names;
+        meta = meta.data;
+        data = kmer.data
+      }
   end: sig
     include module type of KMerDB_Base
-    module Transformation:
-      sig
-        (* Transformation function *)
-        type t =
-          (* Thresholds in the interval (0.,1.) are taken as relative ones *)
-          | Threshold of float
-          | Power of float
-          | CLR
-          | Pseudo of float * bool (* The boolean is whether to quantise *)
-        val of_string: string -> t
-        val to_string: t -> string
-      end
     (* Transformations *)
     val transform: ?threads:int -> ?elements_per_step:int -> ?verbose:bool ->
       Transformation.t -> t -> t
-    (* Combinations *)
-    module CombinationCriterion:
-      sig
-        type t = RescaledMean | RescaledMedian
-        val of_string: string -> t
-        val to_string: t -> string
-      end
-    (* Generate according to the specified criterion a combination of the spectra having the given labels,
+    (* Combinations.
+       Generate according to the specified criterion a combination of the spectra having the given labels,
         name the combination as directed, and add it to the database *)
     val add_combined_selected: ?threads:int -> ?elements_per_step:int -> ?verbose:bool ->
                                t -> string -> StringSet.t -> CombinationCriterion.t -> t
@@ -763,11 +824,12 @@ include (
     (* Spectral distance matrix *)
     val to_distances: ?precision:int -> ?normalise:bool -> ?threads:int -> ?elements_per_step:int -> ?verbose:bool ->
                       Space.Distance.t -> t -> StringSet.t -> StringSet.t -> string -> unit
-    (* *)
+    (* Input/output *)
     val to_files: ?precision:int -> ?output_zero_kmers:bool ->
                   ?threads:int -> ?elements_per_step:int -> ?verbose:bool ->
                   t -> string -> unit
-    val of_files: ?threads:int -> ?bytes_per_step:int -> ?verbose:bool -> string -> t
+    val of_files: ?threads:int -> ?bytes_per_step:int -> ?elements_per_step:int -> ?verbose:bool ->
+                  string -> t
   end
 )
 

@@ -101,8 +101,8 @@ module Parameters =
 
 let info = {
   Tools.Argv.name = "KPopTwistDB";
-  version = "46";
-  date = "03-Nov-2025"
+  version = "47";
+  date = "09-Nov-2025"
 } and authors = [
   "2022-2025", "Paolo Ribeca", "paolo.ribeca@gmail.com";
   "2024     ", "Ünsal Öztürk", "uensal.oeztuerk@gmail.com"
@@ -272,7 +272,7 @@ let () =
       [ "same as option '-d', but additionally output the distance matrix";
         "in tabular form.";
         "File extensions are automatically assigned";
-        " (will be '.KPopSummary.txt' and '.KPopDistMat.txt',";
+        " (will be '.KPopSummary.txt' and '.KPopDMatrix.txt',";
         "  unless file is '/dev/*')" ],
       TA.Optional,
       (fun _ ->

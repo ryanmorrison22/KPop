@@ -90,7 +90,7 @@ include (
             Array.iteri
               (fun db_row_idx twister_col_idx ->
                 if twister_col_idx <> -1 then begin
-                  let v = KMerDB.CountBAVector.(db.core.storage.(db_row_idx).@(i)) in
+                  let v = KMerDB.CountBAVector.(db.core.data.(db_row_idx).@(i)) in
                   acc := !acc +. v;
                   s_v := IntMap.add twister_col_idx v !s_v
                 end)

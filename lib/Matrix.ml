@@ -278,21 +278,21 @@ include (
           | Inertia
           | Twisted
           | Vectors
-          | DistMat
+          | DMatrix
         let to_string = function
           | Distill -> "KPopDistill"
           | Twister -> "KPopTwister"
           | Inertia -> "KPopInertia"
           | Twisted -> "KPopTwisted"
           | Vectors -> "KPopVectors"
-          | DistMat -> "KPopDistMat"
+          | DMatrix -> "KPopDMatrix"
         let of_string = function
           | "KPopDistill" -> Distill
           | "KPopTwister" -> Twister
           | "KPopInertia" -> Inertia
           | "KPopTwisted" -> Twisted
           | "KPopVectors" -> Vectors
-          | "KPopDistMat" -> DistMat
+          | "KPopDMatrix" -> DMatrix
           | s ->
             Exception.raise_unrecognized_initializer __FUNCTION__ "archive type" s
       end
@@ -309,8 +309,6 @@ include (
               (Type.to_string expected) (Type.to_string found))
       end
     let empty which = { which; matrix = Base.empty } (* Immutable *)
-    let transpose_single_threaded ?(verbose = false) m =
-      { m with matrix = Base.transpose_single_threaded ~verbose m.matrix }
     let transpose ?(threads = 1) ?(elements_per_step = 10000) ?(verbose = false) m =
       { m with matrix = Base.transpose ~threads ~elements_per_step ~verbose m.matrix }
     let merge_rowwise ?(verbose = false) m1 m2 =
@@ -358,7 +356,7 @@ include (
           | Inertia
           | Twisted
           | Vectors (* Only used internally *)
-          | DistMat (* Only used internally *)
+          | DMatrix (* Only used internally *)
         val to_string: t -> string
         val of_string: string -> t
       end
@@ -372,7 +370,6 @@ include (
         val raise_unexpected_type: string -> Type.t -> Type.t -> unit
       end
     val empty: Type.t -> t
-    val transpose_single_threaded: ?verbose:bool -> t -> t
     val transpose: ?threads:int -> ?elements_per_step:int -> ?verbose:bool -> t -> t
     (* Merge two matrices - the type of the two inputs must be the same *)
     val merge_rowwise: ?verbose:bool -> t -> t -> t

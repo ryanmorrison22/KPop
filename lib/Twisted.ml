@@ -20,13 +20,87 @@ module Tools = BiOCamLib.Tools
 module Trees = BiOCamLib.Trees
 open BiOCamLib.Better
 
-let ( .@() ) = Float.Array.( .@() )
-let ( .@()<- ) = Float.Array.( .@()<- )
+(* Policy mandating how many additional neighbours should be visited to compute statistics
+    in addition to the requested ones *)
+module NeighborsPolicy:
+  sig
+    (* We make the type private to implement constraints *)
+    type t = private
+      | Proportional of float (* Factor must be >= 1. *)
+      | Additional of int (* Number must be >= 0 *)
+    val to_string: t -> string
+    val of_string: string -> t
+    val get_to_be_visited: t -> int -> int option -> int
+  end
+= struct
+    type t =
+      | Proportional of float (* Factor must be >= 1. *)
+      | Additional of int (* Number must be >= 0 *)
+    let to_string = function
+      | Proportional f -> "times(" ^ string_of_float f ^ ")"
+      | Additional n -> "plus(" ^ string_of_int n ^ ")"
+    let of_string_re = Str.regexp "[()]"
+    let of_string s =
+      let fail kind = Printf.sprintf "(%s): %s policy '%s'" __FUNCTION__ kind s |> failwith in
+      match Str.full_split of_string_re s with
+      | [ Text "times"; Delim "("; Text mult; Delim ")" ] ->
+        let mult =
+          try
+            float_of_string mult
+          with _ ->
+            fail "Invalid" in
+        if mult < 1. then
+          fail "Invalid";
+        Proportional mult
+      | [ Text "plus"; Delim "("; Text add; Delim ")" ] ->
+        let add =
+          try
+            int_of_string add
+          with _ ->
+            fail "Unknown" in
+        if add < 0 then
+          fail "Invalid";
+        Additional add
+      | _ ->
+        fail "Unknown"
+    let get_to_be_visited p n k =
+      match k, p with
+      | None, _ ->
+        n
+      | Some k, Proportional f ->
+        f *. float_of_int k +. 0.5 |> int_of_float |> min n
+      | Some k, Additional i ->
+        min (k + i) n
+  end
+
+module SplitsAlgorithm:
+  sig
+    type t =
+      | Gaps
+      | Centroids
+    val to_string: t -> string
+    val of_string: string -> t
+  end
+= struct
+    type t =
+      | Gaps
+      | Centroids
+    let of_string = function
+      | "gaps" -> Gaps
+      | "centroids" -> Centroids
+      | s ->
+        Exception.raise_unrecognized_initializer __FUNCTION__ "algorithm" s
+    let to_string = function
+      | Gaps -> "gaps"
+      | Centroids -> "centroids"
+  end
 
 (* Twisted vectors (in standard coordinates) are a combination of KPop matrices.
    We include in order not to have a repeated module prefix *)
 include (
   struct
+    let ( .@() ) = Float.Array.( .@() )
+    let ( .@()<- ) = Float.Array.( .@()<- )
     type t = {
       inertia: Matrix.t;
       twisted: Matrix.t
@@ -214,56 +288,15 @@ include (
       close_out output;
       if output_distance_matrix then
         Matrix.to_file ~precision ~threads ~elements_per_step ~verbose {
-          which = DistMat;
+          which = DMatrix;
           matrix = {
             row_names = row_names_2;
             col_names = row_names_1;
             data
           }
         } prefix
-    module NeighborsPolicy =
-      struct
-        type t =
-          | Proportional of float (* Factor must be >= 1. *)
-          | Additional of int (* Number must be >= 0 *)
-        let to_string = function
-          | Proportional f -> "times(" ^ string_of_float f ^ ")"
-          | Additional n -> "plus(" ^ string_of_int n ^ ")"
-        let of_string_re = Str.regexp "[()]"
-        let of_string s =
-          let fail kind = Printf.sprintf "(%s): %s policy '%s'" __FUNCTION__ kind s |> failwith in
-          match Str.full_split of_string_re s with
-          | [ Text "times"; Delim "("; Text mult; Delim ")" ] ->
-            let mult =
-              try
-                float_of_string mult
-              with _ ->
-                fail "Invalid" in
-            if mult < 1. then
-              fail "Invalid";
-            Proportional mult
-          | [ Text "plus"; Delim "("; Text add; Delim ")" ] ->
-            let add =
-              try
-                int_of_string add
-              with _ ->
-                fail "Unknown" in
-            if add < 0 then
-              fail "Invalid";
-            Additional add
-          | _ ->
-            fail "Unknown"
-        let get_to_be_visited p n k =
-          match k, p with
-          | None, _ ->
-            n
-          | Some k, Proportional f ->
-            f *. float_of_int k +. 0.5 |> int_of_float |> min n
-          | Some k, Additional i ->
-            min (k + i) n
-      end
     let summarize_neighbors
-        ?(normalize = true) ?(how_many = Some 2) ?(policy = NeighborsPolicy.Proportional 2.)
+        ?(normalize = true) ?(how_many = Some 2) ?(policy = NeighborsPolicy.of_string "times(2)")
         ?(index_type = Interfaiss.Type.of_string "flat") ?(threads = 1) ?(elements_per_step = 10000) ?(verbose = false)
         metric db qs prefix =
       (* Perform some compatibility checks *)
@@ -372,178 +405,163 @@ include (
         Printf.eprintf "%s\r(%s): Writing distance digest to file '%s': done %d/%d rows.\n%!"
           String.TermIO.clear __FUNCTION__ fname n_qs n_qs;
       close_out output
-    (* *)
-    module SplitsAlgorithm =
+    (* Implementation module *)
+    module Bipartition =
       struct
-        type t =
-          | Gaps
-          | Centroids
-        let of_string = function
-          | "gaps" -> Gaps
-          | "centroids" -> Centroids
-          | s ->
-            Exception.raise_unrecognized_initializer __FUNCTION__ "algorithm" s
-        let to_string = function
-          | Gaps -> "gaps"
-          | Centroids -> "centroids"
-        (* Implementation module *)
-        module Bipartition =
-          struct
-            exception Invalid_acceptance_probability_at_zero of float
-            exception Invalid_difference_magnification_factor of float
-            exception Insufficient_elements of int
-            exception Invalid_element of int * int
-            let make
-                ?(acceptance_probability_at_zero = 0.2) ?(difference_magnification_factor = 10.) ?(verbose = false)
-                m init_set =
-              if acceptance_probability_at_zero <= 0. || acceptance_probability_at_zero > 1. then
-                Invalid_acceptance_probability_at_zero acceptance_probability_at_zero |> raise;
-              if difference_magnification_factor <= 0. then
-                Invalid_difference_magnification_factor difference_magnification_factor |> raise;
-              let inverse_acceptance = (1. -. acceptance_probability_at_zero) /. acceptance_probability_at_zero
-              and negative_scale = -. difference_magnification_factor
-              and elements = IntSet.elements_array init_set in
-              let num_elements = Array.length elements in
-              if num_elements < 2 then
-                Insufficient_elements num_elements |> raise;
-              let n = Array.length m.Matrix.Base.row_names
-              and d = Array.length m.Matrix.Base.col_names
-              and one = ref IntSet.empty and cardinal_one = ref 0
-              and two = ref IntSet.empty and cardinal_two = ref 0 in
-              let centroid_one = Float.Array.make d 0. |> ref
-              and centroid_two = Float.Array.make d 0. |> ref in
-              IntSet.iter
-                (fun i ->
-                  if i >= n then
-                    Invalid_element (i, n) |> raise;
-                  let v = m.data.(i) in
-                  (* We randomly assign the element to either set *)
-                  if Random.bool () then begin
-                    two := IntSet.add i !two;
-                    incr cardinal_two;
-                    Float.Array.iteri
-                      (fun j x -> !centroid_two.@(j) <- !centroid_two.@(j) +. x)
-                      v
-                  end else begin
-                    one := IntSet.add i !one;
-                    incr cardinal_one;
-                    Float.Array.iteri
-                      (fun j x -> !centroid_one.@(j) <- !centroid_one.@(j) +. x)
-                      v
-                  end)
-                init_set;
-              (* Temporary space *)
-              let old_centroid_one = Float.Array.make d 0. |> ref
-              and old_centroid_two = Float.Array.make d 0. |> ref
-              and compute_objective () =
-                let normalize sum card =
-                  if card > 1. then
-                    sum /. card
-                  else
-                    sum in
-                let cardinal_one = float_of_int !cardinal_one
-                and cardinal_two = float_of_int !cardinal_two and res = ref 0. in
-                if cardinal_one > 0. && cardinal_two > 0. then
-                  Float.Array.iter2
-                    (fun sum_one sum_two ->
-                      let min, max = min_max (normalize sum_one cardinal_one) (normalize sum_two cardinal_two) in
-                      res := !res +. (max -. min))
-                    !centroid_one !centroid_two;
-                !res /. sqrt (1. +. Float.abs (cardinal_one -. cardinal_two)) in
-              let objective = compute_objective () |> ref in
+        exception Invalid_acceptance_probability_at_zero of float
+        exception Invalid_difference_magnification_factor of float
+        exception Insufficient_elements of int
+        exception Invalid_element of int * int
+        let make
+            ?(acceptance_probability_at_zero = 0.2) ?(difference_magnification_factor = 10.) ?(verbose = false)
+            m init_set =
+          if acceptance_probability_at_zero <= 0. || acceptance_probability_at_zero > 1. then
+            Invalid_acceptance_probability_at_zero acceptance_probability_at_zero |> raise;
+          if difference_magnification_factor <= 0. then
+            Invalid_difference_magnification_factor difference_magnification_factor |> raise;
+          let inverse_acceptance = (1. -. acceptance_probability_at_zero) /. acceptance_probability_at_zero
+          and negative_scale = -. difference_magnification_factor
+          and elements = IntSet.elements_array init_set in
+          let num_elements = Array.length elements in
+          if num_elements < 2 then
+            Insufficient_elements num_elements |> raise;
+          let n = Array.length m.Matrix.Base.row_names
+          and d = Array.length m.Matrix.Base.col_names
+          and one = ref IntSet.empty and cardinal_one = ref 0
+          and two = ref IntSet.empty and cardinal_two = ref 0 in
+          let centroid_one = Float.Array.make d 0. |> ref
+          and centroid_two = Float.Array.make d 0. |> ref in
+          IntSet.iter
+            (fun i ->
+              if i >= n then
+                Invalid_element (i, n) |> raise;
+              let v = m.data.(i) in
+              (* We randomly assign the element to either set *)
+              if Random.bool () then begin
+                two := IntSet.add i !two;
+                incr cardinal_two;
+                Float.Array.iteri
+                  (fun j x -> !centroid_two.@(j) <- !centroid_two.@(j) +. x)
+                  v
+              end else begin
+                one := IntSet.add i !one;
+                incr cardinal_one;
+                Float.Array.iteri
+                  (fun j x -> !centroid_one.@(j) <- !centroid_one.@(j) +. x)
+                  v
+              end)
+            init_set;
+          (* Temporary space *)
+          let old_centroid_one = Float.Array.make d 0. |> ref
+          and old_centroid_two = Float.Array.make d 0. |> ref
+          and compute_objective () =
+            let normalize sum card =
+              if card > 1. then
+                sum /. card
+              else
+                sum in
+            let cardinal_one = float_of_int !cardinal_one
+            and cardinal_two = float_of_int !cardinal_two and res = ref 0. in
+            if cardinal_one > 0. && cardinal_two > 0. then
+              Float.Array.iter2
+                (fun sum_one sum_two ->
+                  let min, max = min_max (normalize sum_one cardinal_one) (normalize sum_two cardinal_two) in
+                  res := !res +. (max -. min))
+                !centroid_one !centroid_two;
+            !res /. sqrt (1. +. Float.abs (cardinal_one -. cardinal_two)) in
+          let objective = compute_objective () |> ref in
 
-              if verbose then begin
-                Printf.eprintf "(%s): Begin (objective=%.3g, one=[" __FUNCTION__ !objective;
-                IntSet.iter (Printf.eprintf " %d") !one;
-                Printf.eprintf " ], two=[";
-                IntSet.iter (Printf.eprintf " %d") !two;
-                Printf.eprintf " ])\n%!"
-              end;
+          if verbose then begin
+            Printf.eprintf "(%s): Begin (objective=%.3g, one=[" __FUNCTION__ !objective;
+            IntSet.iter (Printf.eprintf " %d") !one;
+            Printf.eprintf " ], two=[";
+            IntSet.iter (Printf.eprintf " %d") !two;
+            Printf.eprintf " ])\n%!"
+          end;
 
-              (* All-time bests *)
-              let max_objective = ref !objective and max_one = ref !one and max_two = ref !two
-              and terminator = max num_elements 40 and rejected = ref 0 and steps = ref 0 in
-              (* We stop if no improvement happens for as many moves as the number of elements *)
-              while !rejected < terminator do
+          (* All-time bests *)
+          let max_objective = ref !objective and max_one = ref !one and max_two = ref !two
+          and terminator = max num_elements 40 and rejected = ref 0 and steps = ref 0 in
+          (* We stop if no improvement happens for as many moves as the number of elements *)
+          while !rejected < terminator do
 
-                if !steps mod 1000 = 0 then
-                  Printf.eprintf " Step #%d: objective=%.3g, max_objective=%.3g\n%!" !steps !objective !max_objective;
-                incr steps;
+            if !steps mod 1000 = 0 then
+              Printf.eprintf " Step #%d: objective=%.3g, max_objective=%.3g\n%!" !steps !objective !max_objective;
+            incr steps;
 
-                (* We save the old state *)
-                let old_one = !one and old_cardinal_one = !cardinal_one
-                and old_two = !two and old_cardinal_two = !cardinal_two
-                and old_objective = !objective in
-                Float.Array.blit !centroid_one 0 !old_centroid_one 0 d;
-                Float.Array.blit !centroid_two 0 !old_centroid_two 0 d;
-                let selected = elements.(Random.int num_elements) in
-                let v = m.data.(selected) in
-                if IntSet.mem selected !one then begin
-                  (* Move element from partition one to partition two *)
-                  one := IntSet.remove selected !one;
-                  decr cardinal_one;
-                  two := IntSet.add selected !two;
-                  incr cardinal_two;
-                  Float.Array.iter2i
-                    (fun i sum_one sum_two ->
-                      let coord = v.@(i) in
-                      !centroid_one.@(i) <- sum_one -. coord;
-                      !centroid_two.@(i) <- sum_two +. coord)
-                    !old_centroid_one !old_centroid_two
-                end else begin
-                  (* Move element from partition two to partition one *)
-                  two := IntSet.remove selected !two;
-                  decr cardinal_two;
-                  one := IntSet.add selected !one;
-                  incr cardinal_one;
-                  Float.Array.iter2i
-                    (fun i sum_one sum_two ->
-                      let coord = v.@(i) in
-                      !centroid_two.@(i) <- sum_two -. coord;
-                      !centroid_one.@(i) <- sum_one +. coord)
-                    !old_centroid_one !old_centroid_two
-                end;
-                objective := compute_objective ();
-                (* Should we accept the move? *)
-                let delta = !objective -. old_objective in
-                let score = 1. /. (1. +. inverse_acceptance *. exp (negative_scale *. delta)) in
-                if Random.float 1. <= score then begin
-                  (* Accept *)
-                  rejected := 0;
-                  if !objective > !max_objective then begin
-                    (* Update all-time minimum *)
-                    max_objective := !objective;
-                    max_one := !one;
-                    max_two := !two
-                  end
-                end else begin
-                  (* Reject *)
-                  incr rejected;
-                  (* We have to restore the previous state *)
-                  one := old_one;
-                  cardinal_one := old_cardinal_one;
-                  two := old_two;
-                  cardinal_two := old_cardinal_two;
-                  let tmp = !centroid_one in
-                  centroid_one := !old_centroid_one;
-                  old_centroid_one := tmp;
-                  let tmp = !centroid_two in
-                  centroid_two := !old_centroid_two;
-                  old_centroid_two := tmp;
-                  objective := old_objective
-                end
-              done;
+            (* We save the old state *)
+            let old_one = !one and old_cardinal_one = !cardinal_one
+            and old_two = !two and old_cardinal_two = !cardinal_two
+            and old_objective = !objective in
+            Float.Array.blit !centroid_one 0 !old_centroid_one 0 d;
+            Float.Array.blit !centroid_two 0 !old_centroid_two 0 d;
+            let selected = elements.(Random.int num_elements) in
+            let v = m.data.(selected) in
+            if IntSet.mem selected !one then begin
+              (* Move element from partition one to partition two *)
+              one := IntSet.remove selected !one;
+              decr cardinal_one;
+              two := IntSet.add selected !two;
+              incr cardinal_two;
+              Float.Array.iter2i
+                (fun i sum_one sum_two ->
+                  let coord = v.@(i) in
+                  !centroid_one.@(i) <- sum_one -. coord;
+                  !centroid_two.@(i) <- sum_two +. coord)
+                !old_centroid_one !old_centroid_two
+            end else begin
+              (* Move element from partition two to partition one *)
+              two := IntSet.remove selected !two;
+              decr cardinal_two;
+              one := IntSet.add selected !one;
+              incr cardinal_one;
+              Float.Array.iter2i
+                (fun i sum_one sum_two ->
+                  let coord = v.@(i) in
+                  !centroid_two.@(i) <- sum_two -. coord;
+                  !centroid_one.@(i) <- sum_one +. coord)
+                !old_centroid_one !old_centroid_two
+            end;
+            objective := compute_objective ();
+            (* Should we accept the move? *)
+            let delta = !objective -. old_objective in
+            let score = 1. /. (1. +. inverse_acceptance *. exp (negative_scale *. delta)) in
+            if Random.float 1. <= score then begin
+              (* Accept *)
+              rejected := 0;
+              if !objective > !max_objective then begin
+                (* Update all-time minimum *)
+                max_objective := !objective;
+                max_one := !one;
+                max_two := !two
+              end
+            end else begin
+              (* Reject *)
+              incr rejected;
+              (* We have to restore the previous state *)
+              one := old_one;
+              cardinal_one := old_cardinal_one;
+              two := old_two;
+              cardinal_two := old_cardinal_two;
+              let tmp = !centroid_one in
+              centroid_one := !old_centroid_one;
+              old_centroid_one := tmp;
+              let tmp = !centroid_two in
+              centroid_two := !old_centroid_two;
+              old_centroid_two := tmp;
+              objective := old_objective
+            end
+          done;
 
-              if verbose then begin
-                Printf.eprintf "(%s): End (objective=%.3g, max=%.3g, one=[" __FUNCTION__ !objective !max_objective;
-                IntSet.iter (fun i -> m.row_names.(i) |> Printf.eprintf " '%s'") !max_one;
-                Printf.eprintf " ], two=[";
-                IntSet.iter (fun i -> m.row_names.(i) |> Printf.eprintf " '%s'") !max_two;
-                Printf.eprintf " ], steps=%d)\n%!" !steps
-              end;
+          if verbose then begin
+            Printf.eprintf "(%s): End (objective=%.3g, max=%.3g, one=[" __FUNCTION__ !objective !max_objective;
+            IntSet.iter (fun i -> m.row_names.(i) |> Printf.eprintf " '%s'") !max_one;
+            Printf.eprintf " ], two=[";
+            IntSet.iter (fun i -> m.row_names.(i) |> Printf.eprintf " '%s'") !max_two;
+            Printf.eprintf " ], steps=%d)\n%!" !steps
+          end;
 
-              !max_one, !max_two, !max_objective, !steps
-          end
+          !max_one, !max_two, !max_objective, !steps
       end
     let get_splits
         ?(normalize = true) ?(threads = 1) ?(elements_per_step = 10000) ?(verbose = false)
@@ -629,7 +647,7 @@ include (
         let rec refine_by_bipartition set =
           if IntSet.cardinal set > 1 then begin
             (* Bipartition.evolve () should work fine provided that there are at least 2 elements *)
-            let one, two, objective, _ = SplitsAlgorithm.Bipartition.make ~verbose m.matrix set in
+            let one, two, objective, _ = Bipartition.make ~verbose m.matrix set in
             Trees.Splits.add_split res (IntSet.elements_array one |> Trees.Splits.Split.of_array) objective;
             refine_by_bipartition one;
             refine_by_bipartition two
@@ -720,18 +738,6 @@ include (
                                      ?output_distance_matrix:bool -> ?precision:int ->
                                      ?threads:int -> ?elements_per_step:int -> ?verbose:bool ->
                                      Space.Distance.t -> Space.Distance.Metric.t -> t -> t -> string -> unit
-    (* Policy mandating how many additional neighbours should be visited to compute statistics
-        in addition to the requested ones *)
-    module NeighborsPolicy:
-      sig
-        (* We make the type private to implement constraints *)
-        type t = private
-          | Proportional of float (* Factor must be >= 1. *)
-          | Additional of int (* Number must be >= 0 *)
-        val to_string: t -> string
-        val of_string: string -> t
-        val get_to_be_visited: t -> int -> int option -> int
-      end
     (* Find nearest neighbours of each row of a matrix among the rows of another matrix
         using Euclidean distance and the specified metric function, and summarise such neighbours
         while considering more elements according to the specified policy *)
@@ -739,19 +745,11 @@ include (
                              ?policy:NeighborsPolicy.t -> ?index_type:Interfaiss.Type.t ->
                              ?threads:int -> ?elements_per_step:int -> ?verbose:bool ->
                              Space.Distance.Metric.t -> t -> t -> string -> unit
-    module SplitsAlgorithm:
-      sig
-        type t =
-          | Gaps
-          | Centroids
-        val to_string: t -> string
-        val of_string: string -> t
-      end
     (* Output splits for the vectors computed with the specified distance and metric functions *)
     val get_splits: ?normalize:bool -> ?threads:int -> ?elements_per_step:int -> ?verbose:bool ->
                     Space.Distance.t -> Space.Distance.Metric.t ->
                     SplitsAlgorithm.t -> int -> t -> Trees.Splits.t
-    (* *)
+    (* Input/Output *)
     val to_files: ?precision:int -> ?threads:int -> ?elements_per_step:int -> ?verbose:bool -> t -> string -> unit
     exception Mismatched_vector_files of string array * string array * string array
     val of_files: ?threads:int -> ?bytes_per_step:int -> ?verbose:bool -> string -> t

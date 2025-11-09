@@ -28,7 +28,7 @@ module CoverageFromName =
           Str.full_split regexp s
             |> List.filter_map
                  (function
-                   | Str.Delim s -> Some (float_of_string s |> ceil |> int_of_float)
+                   | Str.Delim s -> Some (float_of_string s)
                    | Text _ -> None)
             |> Array.of_list
         with _ ->
@@ -82,8 +82,8 @@ module Parameters =
 
 let info = {
   Tools.Argv.name = "KPopCount";
-  version = "22";
-  date = "03-Nov-2025"
+  version = "23";
+  date = "09-Nov-2025"
 } and authors = [
   "2017-2025", "Paolo Ribeca", "paolo.ribeca@gmail.com"
 ]
@@ -335,7 +335,7 @@ let () =
                 current := read.tag;
               let weight =
                 if !weight_field = 0 then
-                  1
+                  1.
                 else
                   CoverageFromName.extract !weight_field read.tag in
               k_mer_iterator ~weight read.seq;
@@ -344,15 +344,15 @@ let () =
                   !reads_cntr (String.pluralize_int "read" !reads_cntr);
               if segm_id = 0 then
                 incr reads_cntr)
-            (Files.ReadsIterate.add_from_files Files.ReadsIterate.empty [| input |])
+            (Files.ReadsIterate.add_from_files Files.ReadsIterate.empty [| input |]);
+          if !Parameters.verbose then
+            Printf.eprintf "%s\r(%s): Added and hashed %d %s.\n%!" String.TermIO.clear __FUNCTION__
+              !reads_cntr (String.pluralize_int "read" !reads_cntr);
         | To_file prefix ->
           unexpected_end_of_output_file
             (fun () -> KMerDB.to_binary ~verbose:!Parameters.verbose !db prefix))
-      program;
-    if !Parameters.verbose then
-      Printf.eprintf "%s\r(%s): Added and hashed %d %s.\n%!" String.TermIO.clear __FUNCTION__
-        !reads_cntr (String.pluralize_int "read" !reads_cntr);
-    (*Printf.eprintf "Times: (encode=%g, trie=%g, array=%g, accumulate=%g)\n%!"
+      program
+    (*;Printf.eprintf "Times: (encode=%g, trie=%g, array=%g, accumulate=%g)\n%!"
       (Tools.Timer.read "KMers.Iterator.Encoder:encode")
       (Tools.Timer.read "KMers.Iterator.Encoder:trie")
       (Tools.Timer.read "KMers.Iterator.Encoder:array")
