@@ -757,10 +757,10 @@ include (
             end
           type t = string array
           let create n = Array.make n ""
-          let set sa i s = sa.(i) <- s [@@inline]
+          let set = Array.set
           let get_col_name _ _ = assert false
           let get_row_name _ _ = assert false
-          let get_datum _ _ _ = assert false
+          let get_datum m i j = m.(i).(j) [@@inline] (* Needed by transpose() *)
         end
       ) in
       let input = make_filename_meta_table prefix |> open_in in
@@ -779,7 +779,7 @@ include (
           let set = CountBAVector.set
           let get_col_name _ _ = assert false
           let get_row_name _ _ = assert false
-          let get_datum _ _ _ = assert false
+          let get_datum m i j = m.(i).@(j) [@@inline] (* Needed by transpose() *)
         end
       ) in
       let input = make_filename_kmer_table prefix |> open_in in

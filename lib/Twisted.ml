@@ -230,8 +230,8 @@ include (
         data = [| n2 |]
       }) "N2.txt";
       *)
-      let fname = make_filename_summary prefix in
-      let output = open_out fname
+      let path = make_filename_summary prefix in
+      let output = open_out path
       and n_cols = Array.length t1.twisted.matrix.col_names in
       let req_len =
         match keep_at_most with
@@ -279,12 +279,12 @@ include (
           let new_processed_rows = !processed_rows + n_processed in
           if verbose && new_processed_rows / rows_per_step > !processed_rows / rows_per_step then
             Printf.eprintf "%s\r(%s): Writing distance digest to file '%s': done %d/%d rows%!"
-              String.TermIO.clear __FUNCTION__ fname new_processed_rows r2;
+              String.TermIO.clear __FUNCTION__ path new_processed_rows r2;
           processed_rows := new_processed_rows)
         threads;
       if verbose then
         Printf.eprintf "%s\r(%s): Writing distance digest to file '%s': done %d/%d rows.\n%!"
-          String.TermIO.clear __FUNCTION__ fname r2 r2;
+          String.TermIO.clear __FUNCTION__ path r2 r2;
       close_out output;
       if output_distance_matrix then
         Matrix.to_file ~precision ~threads ~elements_per_step ~verbose {
@@ -346,8 +346,8 @@ include (
         else
           Float.Array.make n_db 1., Float.Array.make n_qs 1. in
       (* We compute statistics and output results *)
-      let fname = make_filename_summary prefix in
-      let output = open_out fname
+      let path = make_filename_summary prefix in
+      let output = open_out path
       and rows_per_step = max 1 (elements_per_step / eff_nn_number) and processed_rows = ref 0
       and buf = Buffer.create 1048576 in
       (* Parallel section *)
@@ -398,12 +398,12 @@ include (
           let new_processed_rows = !processed_rows + n_processed in
           if verbose && new_processed_rows / rows_per_step > !processed_rows / rows_per_step then
             Printf.eprintf "%s\r(%s): Writing distance digest to file '%s': done %d/%d rows%!"
-              String.TermIO.clear __FUNCTION__ fname new_processed_rows n_qs;
+              String.TermIO.clear __FUNCTION__ path new_processed_rows n_qs;
           processed_rows := new_processed_rows)
         threads;
       if verbose then
         Printf.eprintf "%s\r(%s): Writing distance digest to file '%s': done %d/%d rows.\n%!"
-          String.TermIO.clear __FUNCTION__ fname n_qs n_qs;
+          String.TermIO.clear __FUNCTION__ path n_qs n_qs;
       close_out output
     (* Implementation module *)
     module Bipartition =
@@ -688,10 +688,10 @@ include (
       | w when String.length w >= 5 && String.sub w 0 5 = "/dev/" -> w
       | prefix -> prefix ^ ".KPopTwisted"
     let to_binary ?(verbose = false) t prefix =
-      let fname = make_filename_binary prefix in
-      let output = open_out fname in
+      let path = make_filename_binary prefix in
+      let output = open_out path in
       if verbose then
-        Printf.eprintf "(%s): Outputting vectors to file '%s'...%!" __FUNCTION__ fname;
+        Printf.eprintf "(%s): Outputting vectors to file '%s'...%!" __FUNCTION__ path;
       output_value output "KPopTwisted";
       output_value output archive_version;
       Matrix.to_channel output t.inertia;
@@ -700,10 +700,10 @@ include (
       if verbose then
         Printf.eprintf " done.\n%!"
     let of_binary ?(verbose = false) prefix =
-      let fname = make_filename_binary prefix in
-      let input = open_in fname in
+      let path = make_filename_binary prefix in
+      let input = open_in path in
       if verbose then
-        Printf.eprintf "(%s): Reading vectors from file '%s'...%!" __FUNCTION__ fname;
+        Printf.eprintf "(%s): Reading vectors from file '%s'...%!" __FUNCTION__ path;
       let which = (input_value input: string) in
       let version = (input_value input: string) in
       if which <> "KPopTwisted" || version <> archive_version then

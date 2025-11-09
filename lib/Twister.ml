@@ -30,7 +30,7 @@ include (
     let empty = { twister = Matrix.empty Twister; inertia = Matrix.empty Inertia }
     (* Strictly speaking, we return the _transposed_ of the matrix product here *)
     let add_twisted_from_database
-        ?(threads = 1) ?(elements_per_step = 100) ?(verbose = false) twister twisted path =
+        ?(threads = 1) ?(elements_per_step = 100) ?(verbose = false) twister twisted prefix =
       (* Perform some compatibility checks.
          Names of dimensions must be the same for both matrices *)
       let twisted_col_names =
@@ -48,11 +48,17 @@ include (
         (fun i name ->
           Hashtbl.add twister_col_names_to_idx name i)
         twister.twister.matrix.col_names;
-      let db = KMerDB.of_binary ~verbose path in
+      let db = KMerDB.of_binary ~verbose prefix in
       (* As we process spectra from the database, we have to conform its k-mers
           to the ones in the twister. This can be done once and for all here,
           for all spectra.
          As a bonus, we'll learn the size of the resulting vector *)
+      (* As the database has just been loaded there shouldn't be any buffering space,
+          but we just double check that this is indeed the case *)
+      assert begin
+        db.core.n_rows = Array.length db.core.idx_to_row_names &&
+        db.core.n_cols = Array.length db.core.idx_to_col_names
+      end;
       let db_row_idx_to_twister_col_idx =
         Array.map
           (fun name ->
@@ -63,20 +69,22 @@ include (
               (* We just discard the k-mer *)
               -1)
           db.core.idx_to_row_names in
-      (* We decompose the existing twisted matrix *)
-      let res = ref StringMap.empty in
-      Array.iteri
-        (fun i name ->
-          res := StringMap.add name twisted.twisted.matrix.data.(i) !res)
+      (* We make sure there are no duplicate labels *)
+      Array.iter
+        (fun label ->
+          if StringHashtbl.mem db.col_names_to_idx label then
+            Exception.raise __FUNCTION__ IO_Format
+              (Printf.sprintf "Spectrum '%s' is already present in the destination database" label))
         twisted.twisted.matrix.row_names;
       (*  *)
       let n_cols = db.core.n_cols in
-      let columns_per_step = max 1 (elements_per_step / n_cols) and processed_cols = ref 0 in
+      let cols_per_step = max 1 (elements_per_step / n_cols) and processed_cols = ref 0
+      and res = Array.make n_cols (Float.Array.create 0) in
       (* Parallel section *)
       BiOCamLib.Processes.Parallel.process_stream_chunkwise
         (fun () ->
           if !processed_cols < n_cols then
-            let to_do = min columns_per_step (n_cols - !processed_cols) in
+            let to_do = min cols_per_step (n_cols - !processed_cols) in
             let new_processed_cols = !processed_cols + to_do in
             let res = !processed_cols, new_processed_cols - 1 in
             processed_cols := new_processed_cols;
@@ -90,7 +98,7 @@ include (
             Array.iteri
               (fun db_row_idx twister_col_idx ->
                 if twister_col_idx <> -1 then begin
-                  let v = KMerDB.CountBAVector.(db.core.data.(db_row_idx).@(i)) in
+                  let v = KMerDB.CountBAVector.(db.core.data.(i).@(db_row_idx)) in
                   acc := !acc +. v;
                   s_v := IntMap.add twister_col_idx v !s_v
                 end)
@@ -105,30 +113,25 @@ include (
                 else
                   !s_v
             } in
-            List.accum res begin
-              db.core.idx_to_col_names.(i), (* The label *)
-              Matrix.multiply_matrix_sparse_vector_single_threaded ~verbose:false twister.twister s_v
-            end
+            (i, Matrix.multiply_matrix_sparse_vector_single_threaded ~verbose:false twister.twister s_v)
+              |> List.accum res
           done;
           !res)
         (List.iter
-          (fun (label, row) ->
+          (fun (i, row) ->
             (* The transformed column vector becomes a row *)
-            match StringMap.find_opt label !res with
-            | None ->
-              res := StringMap.add label row !res
-            | Some _ ->
-              Exception.raise __FUNCTION__ IO_Format
-                (Printf.sprintf "Twisted spectrum '%s' is already present in the destination database" label)))
+            res.(i) <- row;
+            let new_processed_cols = !processed_cols + 1 in
+            if verbose && new_processed_cols / cols_per_step > !processed_cols / cols_per_step then
+              Printf.eprintf "%s\r(%s): Twisting spectra: done %d/%d%!"
+                String.TermIO.clear __FUNCTION__ new_processed_cols n_cols;
+            processed_cols := new_processed_cols))
         threads;
-      let n = StringMap.cardinal !res in
-      let row_names = Array.make n ""
-      and data = Array.make n (Float.Array.create 0) in
-      StringMap.iteri
-        (fun i label row ->
-          row_names.(i) <- label;
-          data.(i) <- row)
-        !res;
+      let row_names = Array.append twisted.twisted.matrix.row_names db.core.idx_to_col_names
+      and data = Array.append twisted.twisted.matrix.data res in
+      if verbose then
+        Printf.eprintf "%s\r(%s): Twisting spectra: done %d/%d.\n%!"
+          String.TermIO.clear __FUNCTION__ n_cols n_cols;
       {
         Twisted.inertia = twister.inertia;
         twisted = {
@@ -210,10 +213,10 @@ include (
       inertia: Matrix.t
     }
     val empty: t
-    (* It can fail due to a number of reasons *)
+    (* This one can fail due to a number of reasons *)
     val add_twisted_from_database: ?threads:int -> ?elements_per_step:int -> ?verbose:bool ->
                                    t -> Twisted.t -> string -> Twisted.t
-    (* *)
+    (* Input/Output *)
     val to_files: ?precision:int -> ?threads:int -> ?elements_per_step:int -> ?verbose:bool -> t -> string -> unit
     exception Mismatched_twister_files of string array * string array * string array
     val of_files: ?threads:int -> ?bytes_per_step:int -> ?verbose:bool -> string -> t
