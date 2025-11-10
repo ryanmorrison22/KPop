@@ -109,13 +109,14 @@ include (
       inertia = Matrix.empty Inertia;
       twisted = Matrix.empty Twisted
     }
+    let raise_incompatible_inertias __FUNCTION__ =
+      Exception.raise_incompatible_arrays __FUNCTION__ "matrices" "inertias" Float.Array.iter string_of_float
     let get_inertias t = t.inertia.matrix.data.(0)
-    exception Incompatible_inertias of Float.Array.t * Float.Array.t
     let merge_rowwise t1 t2 =
       (* Perform some compatibility checks *)
-      let inertias_1 = get_inertias t1 and inertias_2 = get_inertias t2 in
-      if inertias_1 <> inertias_2 then
-        Incompatible_inertias (inertias_1, inertias_2) |> raise;
+      let inertias1 = get_inertias t1 and inertias2 = get_inertias t2 in
+      if inertias1 <> inertias2 then
+        raise_incompatible_inertias __FUNCTION__ inertias1 inertias2;
       { inertia = t1.inertia; twisted = Matrix.merge_rowwise t1.twisted t2.twisted }
     (* *)
     let to_embeddings ?(normalize = true) ?(threads = 1) ?(elements_per_step = 10000) ?(verbose = false)
@@ -202,13 +203,13 @@ include (
         ?(threads = 1) ?(elements_per_step = 10000) ?(verbose = false)
         distance metric t1 t2 prefix =
       (* Perform some compatibility checks *)
-      let inertias_1 = get_inertias t1 and inertias_2 = get_inertias t2 in
-      if inertias_1 <> inertias_2 then
-        Incompatible_inertias (inertias_1, inertias_2) |> raise;
+      let inertias1 = get_inertias t1 and inertias2 = get_inertias t2 in
+      if inertias1 <> inertias2 then
+        raise_incompatible_inertias __FUNCTION__ inertias1 inertias2;
       let col_names_1 = t1.twisted.matrix.col_names and col_names_2 = t2.twisted.matrix.col_names in
       if col_names_1 <> col_names_2 then
         Matrix.Exception.raise_incompatible_geometries __FUNCTION__ col_names_1 col_names_2;
-      let metrics = Space.Distance.Metric.compute metric inertias_1 in
+      let metrics = Space.Distance.Metric.compute metric inertias1 in
       let row_names_1 = t1.twisted.matrix.row_names and row_names_2 = t2.twisted.matrix.row_names in
       let r1 = Array.length row_names_1 and r2 = Array.length row_names_2 in
       (* We compute normalisations *)
@@ -241,7 +242,7 @@ include (
       and buf = Buffer.create 1048576 and empty = Float.Array.create 0 in
       let data =
         if output_distance_matrix then
-          Array.init r2 (fun _ -> empty)
+          Fun.const empty |> Array.init r2
         else
           [||] in
       (* Parallel section *)
@@ -302,7 +303,7 @@ include (
       (* Perform some compatibility checks *)
       let inertias_qs = get_inertias qs and inertias_db = get_inertias db in
       if inertias_qs <> inertias_db then
-        Incompatible_inertias (inertias_qs, inertias_db) |> raise;
+        raise_incompatible_inertias __FUNCTION__ inertias_qs inertias_db;
       let col_names_qs = qs.twisted.matrix.col_names and col_names_db = db.twisted.matrix.col_names in
       if col_names_qs <> col_names_db then
         Matrix.Exception.raise_incompatible_geometries __FUNCTION__ col_names_qs col_names_db;
@@ -374,7 +375,7 @@ include (
                 for i = 0 to dim_idxs - 1 do
                   if idxs.{i} = -1L then begin
                     res := i;
-                    raise_notrace Exit
+                    raise_notrace Exit (* This one is OK as it will be caught *)
                   end
                 done;
                 dim_idxs
@@ -408,23 +409,24 @@ include (
     (* Implementation module *)
     module Bipartition =
       struct
-        exception Invalid_acceptance_probability_at_zero of float
-        exception Invalid_difference_magnification_factor of float
-        exception Insufficient_elements of int
-        exception Invalid_element of int * int
         let make
             ?(acceptance_probability_at_zero = 0.2) ?(difference_magnification_factor = 10.) ?(verbose = false)
             m init_set =
           if acceptance_probability_at_zero <= 0. || acceptance_probability_at_zero > 1. then
-            Invalid_acceptance_probability_at_zero acceptance_probability_at_zero |> raise;
+            Exception.raise __FUNCTION__ Initialize
+              (Printf.sprintf "Invalid acceptance probability at zero (expected float between 0. and 1., found %.16g)"
+                acceptance_probability_at_zero);
           if difference_magnification_factor <= 0. then
-            Invalid_difference_magnification_factor difference_magnification_factor |> raise;
+            Exception.raise __FUNCTION__ Initialize
+              (Printf.sprintf "Difference magnification factor cannot be negative (found %.16g)"
+                difference_magnification_factor);
           let inverse_acceptance = (1. -. acceptance_probability_at_zero) /. acceptance_probability_at_zero
           and negative_scale = -. difference_magnification_factor
           and elements = IntSet.elements_array init_set in
           let num_elements = Array.length elements in
           if num_elements < 2 then
-            Insufficient_elements num_elements |> raise;
+            Exception.raise __FUNCTION__ Initialize
+              (Printf.sprintf "There must be at least two elements (found %d)" num_elements);
           let n = Array.length m.Matrix.Base.row_names
           and d = Array.length m.Matrix.Base.col_names
           and one = ref IntSet.empty and cardinal_one = ref 0
@@ -434,7 +436,7 @@ include (
           IntSet.iter
             (fun i ->
               if i >= n then
-                Invalid_element (i, n) |> raise;
+                Exception.raise_index_out_of_range __FUNCTION__ i "set" n;
               let v = m.data.(i) in
               (* We randomly assign the element to either set *)
               if Random.bool () then begin
@@ -470,7 +472,6 @@ include (
                 !centroid_one !centroid_two;
             !res /. sqrt (1. +. Float.abs (cardinal_one -. cardinal_two)) in
           let objective = compute_objective () |> ref in
-
           if verbose then begin
             Printf.eprintf "(%s): Begin (objective=%.3g, one=[" __FUNCTION__ !objective;
             IntSet.iter (Printf.eprintf " %d") !one;
@@ -478,17 +479,14 @@ include (
             IntSet.iter (Printf.eprintf " %d") !two;
             Printf.eprintf " ])\n%!"
           end;
-
           (* All-time bests *)
           let max_objective = ref !objective and max_one = ref !one and max_two = ref !two
           and terminator = max num_elements 40 and rejected = ref 0 and steps = ref 0 in
           (* We stop if no improvement happens for as many moves as the number of elements *)
           while !rejected < terminator do
-
-            if !steps mod 1000 = 0 then
+            if verbose && !steps mod 1000 = 0 then (* Maybe remove in the future *)
               Printf.eprintf " Step #%d: objective=%.3g, max_objective=%.3g\n%!" !steps !objective !max_objective;
             incr steps;
-
             (* We save the old state *)
             let old_one = !one and old_cardinal_one = !cardinal_one
             and old_two = !two and old_cardinal_two = !cardinal_two
@@ -552,7 +550,6 @@ include (
               objective := old_objective
             end
           done;
-
           if verbose then begin
             Printf.eprintf "(%s): End (objective=%.3g, max=%.3g, one=[" __FUNCTION__ !objective !max_objective;
             IntSet.iter (fun i -> m.row_names.(i) |> Printf.eprintf " '%s'") !max_one;
@@ -560,7 +557,6 @@ include (
             IntSet.iter (fun i -> m.row_names.(i) |> Printf.eprintf " '%s'") !max_two;
             Printf.eprintf " ], steps=%d)\n%!" !steps
           end;
-
           !max_one, !max_two, !max_objective, !steps
       end
     let get_splits
@@ -653,33 +649,20 @@ include (
             refine_by_bipartition two
           end else
             Trees.Splits.add_split res (IntSet.elements_array set |> Trees.Splits.Split.of_array) 0. in
-        Seq.init (Array.length m.matrix.row_names) (fun i -> i) |> IntSet.of_seq |> refine_by_bipartition;
+        Seq.init (Array.length m.matrix.row_names) Fun.id |> IntSet.of_seq |> refine_by_bipartition;
         res
     (* *)
     let to_files ?(precision = 15) ?(threads = 1) ?(elements_per_step = 40000) ?(verbose = false) v prefix =
       Matrix.to_file ~precision ~threads ~elements_per_step ~verbose v.inertia prefix;
       Matrix.to_file ~precision ~threads ~elements_per_step ~verbose v.twisted prefix
-    exception Mismatched_vector_files of string array * string array * string array
     let of_files ?(threads = 1) ?(bytes_per_step = 4194304) ?(verbose = false) prefix =
       let inertia = Matrix.of_file ~threads ~bytes_per_step ~verbose Inertia prefix
       and twisted = Matrix.of_file ~threads ~bytes_per_step ~verbose Twisted prefix in
       (* Let's run at least some checks *)
-      if begin
-        inertia.matrix.row_names <> [| "inertia" |] ||
-        inertia.matrix.col_names <> twisted.matrix.col_names
-      end then begin
-        (* Emit additional debugging info *)
-        Printf.eprintf "ERROR: inertia.row_names:";
-        Array.iter (Printf.eprintf "\t\"%s\"") inertia.matrix.row_names;
-        Printf.eprintf "\nERROR: inertia.col_names:";
-        Array.iter (Printf.eprintf "\t\"%s\"") inertia.matrix.col_names;
-        Printf.eprintf "\nERROR: twisted.col_names:";
-        Array.iter (Printf.eprintf "\t\"%s\"") twisted.matrix.col_names;
-        Printf.eprintf "\n%!";
-        Mismatched_vector_files (
-          inertia.matrix.row_names, inertia.matrix.col_names, twisted.matrix.col_names
-        ) |> raise
-      end;
+      if inertia.matrix.row_names <> [| "inertia" |] then
+        Matrix.Exception.raise_unexpected_columns_in_inertia_file __FUNCTION__ inertia.matrix.row_names;
+      if inertia.matrix.col_names <> twisted.matrix.col_names then
+        Matrix.Exception.raise_incompatible_geometries __FUNCTION__ inertia.matrix.col_names twisted.matrix.col_names;
       { inertia; twisted }
     (* *)
     let archive_version = "2025-10-08"
@@ -728,19 +711,21 @@ include (
       twisted: Matrix.t
     }
     val empty: t
-    exception Incompatible_inertias of Float.Array.t * Float.Array.t
+    (* It fails if matrices have incompatible intertias *)
     val merge_rowwise: t -> t -> t
     (* Recompute vectors from the specified distance and metric functions *)
     val to_embeddings: ?normalize:bool -> ?threads:int -> ?elements_per_step:int -> ?verbose:bool ->
                        Space.Distance.t -> Space.Distance.Metric.t -> t -> Matrix.t
-    (* Compute distances between the rows of two matrices and summarise them *)
+    (* Compute distances between the rows of two matrices and summarise them.
+       It fails when matrices are incompatible *)
     val summarize_distances_rowwise: ?normalize:bool -> ?keep_at_most:int option ->
                                      ?output_distance_matrix:bool -> ?precision:int ->
                                      ?threads:int -> ?elements_per_step:int -> ?verbose:bool ->
                                      Space.Distance.t -> Space.Distance.Metric.t -> t -> t -> string -> unit
     (* Find nearest neighbours of each row of a matrix among the rows of another matrix
         using Euclidean distance and the specified metric function, and summarise such neighbours
-        while considering more elements according to the specified policy *)
+        while considering more elements according to the specified policy.
+       It fails when matrices are incompatible *)
     val summarize_neighbors: ?normalize:bool -> ?how_many:int option ->
                              ?policy:NeighborsPolicy.t -> ?index_type:Interfaiss.Type.t ->
                              ?threads:int -> ?elements_per_step:int -> ?verbose:bool ->
@@ -751,7 +736,6 @@ include (
                     SplitsAlgorithm.t -> int -> t -> Trees.Splits.t
     (* Input/Output *)
     val to_files: ?precision:int -> ?threads:int -> ?elements_per_step:int -> ?verbose:bool -> t -> string -> unit
-    exception Mismatched_vector_files of string array * string array * string array
     val of_files: ?threads:int -> ?bytes_per_step:int -> ?verbose:bool -> string -> t
     val to_binary: ?verbose:bool -> t -> string -> unit
     val of_binary: ?verbose:bool -> string -> t

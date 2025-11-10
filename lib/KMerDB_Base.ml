@@ -220,7 +220,6 @@ include (
       and row_idx = StringHashtbl.find !db.row_names_to_idx hash in
       CountBAVector.(!db.core.data.(col_idx).+(row_idx) <- counts);
       !db
-    exception Wrong_number_of_columns of int * int * int
     let add_metadata_file ?(threads = 1) ?(bytes_per_step = 4194304) ?(verbose = false) db path =
       let module MetaIO = Matrix.Base.IO.Make (
         struct
@@ -445,7 +444,6 @@ include (
     val add_counts: t -> string -> string -> float -> t
     val merge: ?verbose:bool -> t -> t -> t
     (* Add metadata - the first field must be the label *)
-    exception Wrong_number_of_columns of int * int * int
     val add_metadata_file: ?threads:int -> ?bytes_per_step:int -> ?verbose:bool -> t -> string -> t
     (* Select column names identified by regexps on metadata fields *)
     val selected_from_regexps: ?verbose:bool -> t -> (string * Str.regexp) list -> StringSet.t

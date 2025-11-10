@@ -155,7 +155,7 @@ module Base:
                 incr i;
                 if !i = d then begin
                   end_reached := true;
-                  raise Exit
+                  raise_notrace Exit (* This one is OK as it will be caught *)
                 end;
                 j := 0
               end;
@@ -231,7 +231,7 @@ module Base:
                 incr i;
                 if !i = r1 then begin
                   end_reached := true;
-                  raise Exit
+                  raise_notrace Exit (* This one is OK as it will be caught *)
                 end;
                 j := 0
               end;
@@ -307,6 +307,14 @@ include (
           Exception.raise __FUNCTION__ IO_Format
             (Printf.sprintf "Unexpected matrix types (expected %s, found %s)"
               (Type.to_string expected) (Type.to_string found))
+        let raise_unexpected_columns_in_inertia_file __FUNCTION__ found =
+          Exception.raise __FUNCTION__ IO_Format begin
+            let buf = Buffer.create 1024 in
+            Printf.bprintf buf "Unrecognized column names in inertia file (expected [ \"inertia\" ], found [";
+            Array.iter (Printf.bprintf buf " \"%s\"") found;
+            Printf.bprintf buf " ])";
+            Buffer.contents buf
+          end
       end
     let empty which = { which; matrix = Base.empty } (* Immutable *)
     let transpose ?(threads = 1) ?(elements_per_step = 10000) ?(verbose = false) m =
@@ -368,6 +376,7 @@ include (
       sig
         include module type of Base.Exception
         val raise_unexpected_type: string -> Type.t -> Type.t -> unit
+        val raise_unexpected_columns_in_inertia_file: string -> string array -> unit
       end
     val empty: Type.t -> t
     val transpose: ?threads:int -> ?elements_per_step:int -> ?verbose:bool -> t -> t

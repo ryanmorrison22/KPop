@@ -16,19 +16,30 @@
 open BiOCamLib
 (*open KPop*)
 
+module Defaults =
+  struct
+    let output_kmers = ""
+    let kmers_keep = ""
+    let kmers_sample = 1.
+    (*let precision = 15*)
+    let threshold_kmers = 0.
+    let threads = Processes.Parallel.get_nproc ()
+    let temporaries = false
+    let verbose = false
+  end
+
 module Parameters =
   struct
     let input = ref ""
     let output = ref ""
-    let output_kmers = ref ""
-    let kmers_keep = ref ""
+    let output_kmers = ref Defaults.output_kmers
+    let kmers_keep = ref Defaults.kmers_keep
     (* The following three are KPopCountDB.TableFilter.default *)
-    let kmers_sample = ref 1.
-    (*let precision = 15*)
-    let threshold_kmers = ref 0.
-    let threads = Processes.Parallel.get_nproc () |> ref
-    let temporaries = ref false
-    let verbose = ref false
+    let kmers_sample = ref Defaults.kmers_sample
+    let threshold_kmers = ref Defaults.threshold_kmers
+    let threads = ref Defaults.threads
+    let temporaries = ref Defaults.temporaries
+    let verbose = ref Defaults.verbose
   end
 
 let info = {
@@ -49,13 +60,13 @@ let () =
       Some "<kmer_list_file>",
       [ "discard the k-mers not listed in this file before twisting the table.";
         "The file must contain one k-mer label per line and no header" ],
-      TA.Default (fun () -> "keep all"),
+      TA.Default (Fun.const "keep all"),
       (fun _ -> Parameters.kmers_keep := TA.get_parameter ());
     [ "--sample"; "--sample-kmers"; "--kmers-sample" ],
       Some "<fractional_float>",
       [ "fraction of the k-mers to be randomly resampled and kept";
         "after parameter -k has been applied and before twisting" ],
-      TA.Default (fun () -> string_of_float !Parameters.kmers_sample),
+      TA.Default (string_of_float Defaults.kmers_sample |> Fun.const),
       (fun _ -> Parameters.kmers_sample := TA.get_parameter_float_fraction ());
     [ "--kmers-threshold" ],
       Some "<non-negative_integer>",
@@ -63,7 +74,7 @@ let () =
         "for each k-mer, and eliminate k-mers such that the corresponding sum";
         "is less than the largest sum rescaled by this threshold.";
         "This filters out k-mers having low frequencies across all spectra" ],
-      TA.Default (fun () -> string_of_float !Parameters.threshold_kmers),
+      TA.Default (string_of_float Defaults.threshold_kmers |> Fun.const),
       (fun _ -> Parameters.threshold_kmers := TA.get_parameter_float_non_neg ());
     TA.make_separator "Input/Output";
     [ "-i"; "--input" ],
@@ -85,24 +96,24 @@ let () =
       [ "use this prefix when saving generated twisted k-mers.";
         "File extension is automatically determined";
         " (will be '.KPopTwisted' unless file is '/dev/*')" ],
-      TA.Default (fun () -> "do not output"),
+      TA.Default (Fun.const "do not output"),
       (fun _ -> Parameters.output_kmers := TA.get_parameter ());
     TA.make_separator "Miscellaneous";
     [ "-T"; "--threads" ],
       Some "<computing_threads>",
       [ "number of concurrent computing threads to be spawned";
         " (default automatically detected from your configuration)" ],
-      TA.Default (fun () -> string_of_int !Parameters.threads),
+      TA.Default (string_of_int Defaults.threads |> Fun.const),
       (fun _ -> Parameters.threads := TA.get_parameter_int_pos ());
     [ "--keep-temporaries" ],
       None,
       [ "keep temporary files rather than deleting them in the end" ],
-      TA.Default (fun () -> "do not keep"),
+      TA.Default (Fun.const "do not keep"),
       (fun _ -> Parameters.temporaries := true);
     [ "-v"; "--verbose" ],
       None,
       [ "set verbose execution" ],
-      TA.Default (fun () -> "quiet execution"),
+      TA.Default (Fun.const "quiet execution"),
       (fun _ -> Parameters.verbose := true);
     [ "-V"; "--version" ],
       None,
@@ -125,7 +136,7 @@ let () =
   if !Parameters.verbose then
     TA.header ();
   (*
-     For the time being, we just repeat input parameters
+     For the time being, we just echo input parameters
   *)
   Printf.printf "%s\001%s\001%.12g\001%.12g\001%s\001%s\001%d\001%b\001%b\n%!"
     !Parameters.input !Parameters.kmers_keep !Parameters.kmers_sample !Parameters.threshold_kmers

@@ -29,8 +29,6 @@ module Distance:
           (* Parameters are: internal power, threshold (on accumulated transformed inertia), external power.
             Powers must be >= 0., threshold between 0. and 1. *)
           | Powers of float * float * float
-        exception Negative_metric_element of float
-        exception Unsorted_metric_vector of Float.Array.t
         val compute: t -> Float.Array.t -> Float.Array.t
         val of_string: string -> t
         val to_string: t -> string
@@ -41,12 +39,6 @@ module Distance:
       | Cosine (* Same as Euclidean^2 / 2, or 1 - cos theta (in [0, 2]) *)
       | Angle (* Same as theta in radians, i.e. arccos (1 - Euclidean^2 / 2) *)
       | Minkowski of float (* Theoretically speaking, the parameter should be an integer *)
-    exception Incompatible_vector_lengths of int * int * int
-    (* What happens when argument vectors have incompatible lengths *)
-    type mode_t =
-      | Fail
-      | Infinity
-    val set_mode: mode_t -> unit
     (* Arguments are distance function, metric, v *)
     val compute_norm: t -> Float.Array.t -> Float.Array.t -> float
     (* Arguments are distance function, metric, a, b.
@@ -76,8 +68,6 @@ module Distance:
           | Flat
           | Powers of float * float * float
         (* Internal type used to cluster identical consecutive elements *)
-        exception Negative_metric_element of float
-        exception Unsorted_metric_vector of Float.Array.t
         module RFreqs = Numbers.RFloatFreqsVector
         let compute = function
           | Flat ->
@@ -93,20 +83,24 @@ module Distance:
               (* We assume that the elements of the metric are not necessarily normalised
                   but always non-negative, as inertia (which is the square of SVs) would be.
                  In order to guarantee that the order of elements does not change after transformation,
-                  elements must also be sorted (in decreasing order, as SVs would be),
-                  and powers non-negative.
-                 The latter is checked at construction time, so we just assert it.
-                 Same for the threshold, which must be between 0. and 1. .
+                  (1) elements must also be sorted (in decreasing order, as SVs would be), and
+                  (2) powers must be non-negative.
+                 Requirement (2) is checked at construction time as the type is private,
+                  so we just assert it; same for the threshold, which must be
+                  between 0. and 1. .
+                 Requirement (1) is immaterial, as of_floatarray() internally re-sorts elements.
+                 This leaves only the positivity of elements to be checked, which is done
+                  by of_floatarray() as well.
                  Note that under these assumptions the "neutral" transformation
                   leaving the flat metric invariant is "powers(1,1,1)".
                  Finally, we multiply the result by the number of dimensions,
                   for consistency with the case of flat metric *)
               assert (power_int >= 0. && threshold >= 0. && threshold <= 1. && power_ext >= 0.);
               let l = Float.Array.length m |> float_of_int in
-              RFreqs.(of_floatarray m |> normalize_abs |> pow_abs power_int
-                                      |> threshold_accum_abs threshold
-                                      |> pow_abs power_ext |> normalize_abs
-                                      |> to_floatarray)
+              RFreqs.(of_floatarray ~non_negative:true m
+                       |> normalize_abs |> pow_abs power_int
+                       |> threshold_accum_abs threshold |> pow_abs power_ext
+                       |> normalize_abs |> to_floatarray)
                 |> Float.Array.map (( *. ) l))
         let of_string_re = Str.regexp "[(,)]"
         let of_string s =
@@ -140,12 +134,6 @@ module Distance:
       | Cosine
       | Angle
       | Minkowski of float
-    exception Incompatible_vector_lengths of int * int * int
-    type mode_t =
-      | Fail
-      | Infinity
-    let mode = ref Fail
-    let set_mode new_mode = mode := new_mode
     let compute_norm_unscaled_component f metr diff =
       match f with
       | Euclidean | Cosine | Angle ->
@@ -168,36 +156,35 @@ module Distance:
             acc := !acc +. (((abs_float el) ** power) *. m.@(i)))
           v;
         !acc ** (1. /. power)
-    let compute ?(adaptor_a = (fun x -> x)) ?(adaptor_b = (fun x -> x)) f m a b =
+    let compute ?(adaptor_a = Fun.id) ?(adaptor_b = Fun.id) f m a b =
       let length_a = Float.Array.length a and length_m = Float.Array.length m and length_b = Float.Array.length b in
-      if length_a <> length_m || length_m <> length_b then begin
-        match !mode with
-        | Fail -> Incompatible_vector_lengths (length_a, length_m, length_b) |> raise
-        | Infinity -> infinity
-      end else
-        (* We could define everything in terms of compute_unscaled_component,
-            but we rewrite things in order to optimise the switch out of the cycle *)
-        let acc = ref 0. in
-        match f with
-        | Minkowski power ->
-          Float.Array.iter2i
-            (fun i el_a el_b ->
-              let diff = abs_float (adaptor_a el_a -. adaptor_b el_b) in
-              acc := !acc +. ((diff ** power) *. m.@(i)))
-            a b;
-          !acc ** (1. /. power)
-        | _ ->
-          Float.Array.iter2i
-            (fun i el_a el_b ->
-              let diff = adaptor_a el_a -. adaptor_b el_b in
-              acc := !acc +. (diff *. diff *. m.@(i)))
-            a b;
-          begin match f with
-          | Euclidean -> sqrt !acc
-          | Cosine -> !acc /. 2.
-          | Angle -> acos (1. -. !acc /. 2.)
-          | _ -> assert false
-          end
+      if length_a <> length_m || length_m <> length_b then
+        Exception.raise __FUNCTION__ IO_Format
+          (Printf.sprintf "Vectors have incompatible lengths (found [%d, %d, %d] for left, metric, right)"
+            length_a length_m length_b);
+      (* We could define everything in terms of compute_unscaled_component,
+          but we rewrite things in order to optimise the switch out of the cycle *)
+      let acc = ref 0. in
+      match f with
+      | Minkowski power ->
+        Float.Array.iter2i
+          (fun i el_a el_b ->
+            let diff = abs_float (adaptor_a el_a -. adaptor_b el_b) in
+            acc := !acc +. ((diff ** power) *. m.@(i)))
+          a b;
+        !acc ** (1. /. power)
+      | _ ->
+        Float.Array.iter2i
+          (fun i el_a el_b ->
+            let diff = adaptor_a el_a -. adaptor_b el_b in
+            acc := !acc +. (diff *. diff *. m.@(i)))
+          a b;
+        begin match f with
+        | Euclidean -> sqrt !acc
+        | Cosine -> !acc /. 2.
+        | Angle -> acos (1. -. !acc /. 2.)
+        | _ -> assert false
+        end
     let of_string_re = Str.regexp "[()]"
     let of_string s =
       let fail kind = Printf.sprintf "(%s): %s distance '%s'" __FUNCTION__ kind s |> failwith in
@@ -367,7 +354,7 @@ module Distance:
               let hi_set = FloatIntMultimap.KeyMap.find hi_coord sorted in
               let max_hi_set = FloatIntMultimap.ValSet.max_elt hi_set in
               if lo_idx = max_lo_set && hi_idx = max_hi_set && hi_coord = max_coord then
-                raise_notrace Exit;
+                raise_notrace Exit; (* This one is OK as it will be caught *)
               if hi_idx <> max_hi_set then
                 Some { state with hi = hi_coord, FloatIntMultimap.ValSet.find_next hi_idx hi_set }
               else if lo_idx <> max_lo_set then
@@ -388,7 +375,7 @@ module Distance:
                 (* Remember that for this to be valid, the distance must be exactly the same *)
                 if !hi_coord = max_coord then
                   (* We have to restart from the beginning *)
-                  raise_notrace Exit
+                  raise_notrace Exit (* This one is OK as it will be caught *)
                 else begin
                   (* Here !hi_coord -. !lo_coord = diff *)
                   assert (!hi_coord -. fst !lo = diff);

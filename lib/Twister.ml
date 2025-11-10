@@ -143,27 +143,14 @@ include (
     let to_files ?(precision = 15) ?(threads = 1) ?(elements_per_step = 40000) ?(verbose = false) tr prefix =
       Matrix.to_file ~precision ~threads ~elements_per_step ~verbose tr.twister prefix;
       Matrix.to_file ~precision ~threads ~elements_per_step ~verbose tr.inertia prefix
-    exception Mismatched_twister_files of string array * string array * string array
     let of_files ?(threads = 1) ?(bytes_per_step = 4194304) ?(verbose = false) prefix =
       let twister = Matrix.of_file ~threads ~bytes_per_step ~verbose Twister prefix
       and inertia = Matrix.of_file ~threads ~bytes_per_step ~verbose Inertia prefix in
       (* Let's run at least some checks *)
-      if begin
-        inertia.matrix.row_names <> [| "inertia" |] ||
-        inertia.matrix.col_names <> twister.matrix.row_names
-      end then begin
-        (* Emit additional debugging info *)
-        Printf.eprintf "ERROR: inertia.row_names:";
-        Array.iter (Printf.eprintf "\t\"%s\"") inertia.matrix.row_names;
-        Printf.eprintf "\nERROR: inertia.col_names:";
-        Array.iter (Printf.eprintf "\t\"%s\"") inertia.matrix.col_names;
-        Printf.eprintf "\nERROR: twister.row_names:";
-        Array.iter (Printf.eprintf "\t\"%s\"") twister.matrix.row_names;
-        Printf.eprintf "\n%!";
-        Mismatched_twister_files (
-          inertia.matrix.row_names, inertia.matrix.col_names, twister.matrix.row_names
-        ) |> raise
-      end;
+      if inertia.matrix.row_names <> [| "inertia" |] then
+        Matrix.Exception.raise_unexpected_columns_in_inertia_file __FUNCTION__ inertia.matrix.row_names;
+      if inertia.matrix.col_names <> twister.matrix.row_names then
+        Matrix.Exception.raise_incompatible_geometries __FUNCTION__ inertia.matrix.col_names twister.matrix.row_names;
       { twister; inertia }
     (* *)
     let archive_version = "2025-10-08"
@@ -218,7 +205,6 @@ include (
                                    t -> Twisted.t -> string -> Twisted.t
     (* Input/Output *)
     val to_files: ?precision:int -> ?threads:int -> ?elements_per_step:int -> ?verbose:bool -> t -> string -> unit
-    exception Mismatched_twister_files of string array * string array * string array
     val of_files: ?threads:int -> ?bytes_per_step:int -> ?verbose:bool -> string -> t
     val to_binary: ?verbose:bool -> t -> string -> unit
     val of_binary: ?verbose:bool -> string -> t

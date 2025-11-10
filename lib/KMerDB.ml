@@ -405,11 +405,11 @@ include (
             res
       end;
       !db
-    exception Classes_label_not_found of string
     let get_indicator_vector db classes_label =
       match StringHashtbl.find_opt db.meta_names_to_idx classes_label with
       | None ->
-        Classes_label_not_found classes_label |> raise
+        Exception.raise __FUNCTION__ IO_Format
+          (Printf.sprintf "Could not find specified metadata field '%s'" classes_label)
       | Some classes_label_idx ->
         (* We derive the class indicator vector *)
         let n_samples = db.core.n_cols in
@@ -432,7 +432,6 @@ include (
           end
         done;
         !num_classes, !ind_to_class, res
-    exception Class_label_is_also_spectrum_name of string
     let split_spectra ?(threads = 1) ?(elements_per_step = 10000) ?(verbose = false)
         db classes_label criterion =
       let _, ind_to_class, ind_classes = get_indicator_vector db classes_label in
@@ -453,7 +452,9 @@ include (
         (fun ind spectra_names ->
           let class_name = IntMap.find ind ind_to_class in
           if StringHashtbl.mem db.col_names_to_idx class_name then
-            Class_label_is_also_spectrum_name class_name |> raise;
+            Exception.raise __FUNCTION__ IO_Format
+              (Printf.sprintf "Specified metadata field '%s' is also the name of a spectrum in the database"
+                class_name);
           res := add_combined_selected ~threads ~elements_per_step ~verbose !res class_name spectra_names criterion)
         !split_names;
       remove_selected !res (Array.to_seq db.core.idx_to_col_names |> StringSet.of_seq)
@@ -462,13 +463,15 @@ include (
     module Freqs = Numbers.FloatFreqsVector
     module FAVector = Numbers.FAVector
     module LF_FAVector = Numbers.LinearFit(FAVector)
-    exception Invalid_number_of_classes of int
     let distill_kmers ?(threads = 1) ?(elements_per_step = 10000) ?(verbose = false)
         db classes_label summary_prefix =
       let stats_table = stats_table_of_core_db ~threads ~verbose db.core in
       let n_classes, _, ind_classes = get_indicator_vector db classes_label and n_samples = db.core.n_cols in
       if n_classes = 1 || n_classes = n_samples then
-        Invalid_number_of_classes n_classes |> raise;
+        Exception.raise __FUNCTION__ IO_Format
+          (Printf.sprintf
+            "Invalid number of equivalence classes identified by metadata field '%s' (found %d, cannot be 1 or %d)"
+            classes_label n_classes n_samples);
       if verbose then begin
         Printf.eprintf "(%s): Classes=[" __FUNCTION__;
         Array.iter (Printf.eprintf " %d") ind_classes;
@@ -813,13 +816,15 @@ include (
         name the combination as directed, and add it to the database *)
     val add_combined_selected: ?threads:int -> ?elements_per_step:int -> ?verbose:bool ->
                                t -> string -> StringSet.t -> CombinationCriterion.t -> t
-    (* Combine spectra into class representatives according to the specified class labels *)
-    exception Class_label_is_also_spectrum_name of string
+    (* Combine spectra into class representatives according to the specified class labels.
+       It can fail if the specified metadata field label does not exist,
+        or if a spectrum with the same name as the label is already present in the database *)
     val split_spectra: ?threads:int -> ?elements_per_step:int -> ?verbose:bool ->
                        t -> string -> CombinationCriterion.t -> t
-    (* Distill k-mers, i.e., sort them by decreasing discriminative power according to the specified class labels *)
-    exception Classes_label_not_found of string
-    exception Invalid_number_of_classes of int
+    (* Distill k-mers, i.e., sort them by decreasing discriminative power according to the specified class labels.
+       It can fail if the specified metadata field label does not exist,
+        or if the number of equivalence classes identified by the labels is invalid
+        (that is, 1 or the same as the number of k-mers) *)
     val distill_kmers: ?threads:int -> ?elements_per_step:int -> ?verbose:bool -> t -> string -> string -> unit
     (* Spectral distance matrix *)
     val to_distances: ?precision:int -> ?normalise:bool -> ?threads:int -> ?elements_per_step:int -> ?verbose:bool ->

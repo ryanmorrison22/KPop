@@ -52,13 +52,15 @@ module Defaults =
     let precision = 15
     let distance = Space.Distance.of_string "euclidean"
     let distance_normalise = true
+    let threads = Processes.Parallel.get_nproc ()
+    let verbose = false
   end
 
 module Parameters =
   struct
     let program = ref []
-    let threads = Processes.Parallel.get_nproc () |> ref
-    let verbose = ref false
+    let threads = ref Defaults.threads
+    let verbose = ref Defaults.verbose
   end
 
 let info = {
@@ -136,13 +138,13 @@ let () =
     [ "--precision" ],
       Some "<positive_integer>",
       [ "set the number of precision digits to be used for tabular output" ],
-      TA.Default (fun () -> string_of_int Defaults.precision),
+      TA.Default (string_of_int Defaults.precision |> Fun.const),
       (fun _ -> Set_precision (TA.get_parameter_int_pos ()) |> List.accum Parameters.program);
     [ "--Output-zero-kmers"; "--Output-zero-k-mers" ],
       Some "'true'|'false'",
       [ "whether to output k-mers whose frequencies are all zero";
         "when writing the database as tabular files" ],
-      TA.Default (fun () -> string_of_bool Defaults.output_zero_kmers),
+      TA.Default (string_of_bool Defaults.output_zero_kmers |> Fun.const),
       (fun _ -> Set_output_zero_kmers (TA.get_parameter_boolean ()) |> List.accum Parameters.program);
     [ "-O"; "--Output" ],
       Some "<tabular_file_prefix>",
@@ -160,7 +162,7 @@ let () =
         "by the largest normalization across spectra";
         " ('mean' averages frequencies across spectra;";
         "  'median' computes the median across spectra)" ],
-      TA.Default (fun () -> KMerDB.CombinationCriterion.to_string Defaults.combination_criterion),
+      TA.Default (KMerDB.CombinationCriterion.to_string Defaults.combination_criterion |> Fun.const),
       (fun _ ->
         Combination_criterion_set (TA.get_parameter () |> KMerDB.CombinationCriterion.of_string)
           |> List.accum Parameters.program);
@@ -169,7 +171,7 @@ let () =
       [ "split the database into classes according to the labels contained in the";
         "specified metadata field and combine the spectra belonging to each class";
         "into a separate vector named as the class label. Delete original spectra.";
-        "Class labels and spectra names must be different" ],
+        "Class label cannot be the same as the name of an existing spectrum" ],
       TA.Optional,
       (fun _ -> Split_spectra (TA.get_parameter ()) |> List.accum Parameters.program);
     [ "--transform" ],
@@ -190,7 +192,7 @@ let () =
         " https://github.com/PaoloRibeca/KPop";
         "or";
         " https://doi.org/10.1186/s13059-025-03585-8" ],
-      TA.Default (fun () -> (KMerDB.Transformation.to_string Defaults.transformation)),
+      TA.Default (KMerDB.Transformation.to_string Defaults.transformation |> Fun.const),
       (fun _ ->
         Transform (TA.get_parameter () |> KMerDB.Transformation.of_string) |> List.accum Parameters.program);
     [ "-d"; "--distill"; "--distill-kmers" ],
@@ -198,6 +200,8 @@ let () =
       [ "optimize k-mers by identifying which ones are most informative";
         "according to the labels contained in the specified metadata field";
         "and by re-sorting k-mers in decreasing order accordingly.";
+        "The labels must identify at least two equivalence classes, and fewer classes";
+        "than the number of k-mers.";
         "Details of the procedure will be written to the specified summary file";
         " (which will be given extension '.KPopDistill.txt' unless file is '/dev/*')" ],
       TA.Optional,
@@ -208,12 +212,12 @@ let () =
       Some "'euclidean'|'minkowski(<non-negative_float>)'",
       [ "set the function to be used when computing distances.";
         "The parameter for 'minkowski()' is the power" ],
-      TA.Default (fun () -> Space.Distance.to_string Defaults.distance),
+      TA.Default (Space.Distance.to_string Defaults.distance |> Fun.const),
       (fun _ -> Distance_set (TA.get_parameter () |> Space.Distance.of_string) |> List.accum Parameters.program);
     [ "--distance-normalize"; "--distance-normalization" ],
       Some "'true'|'false'",
       [ "whether spectra should be normalized prior to computing distances" ],
-      TA.Default (fun () -> string_of_bool Defaults.distance_normalise),
+      TA.Default (string_of_bool Defaults.distance_normalise |> Fun.const),
       (fun _ -> Distance_normalisation_set (TA.get_parameter_boolean ()) |> List.accum Parameters.program);
     [ "--distances"; "--compute-distances"; "--compute-spectral-distances" ],
       Some "REGEXP_SELECTOR REGEXP_SELECTOR <binary_file_prefix>",
@@ -283,12 +287,12 @@ let () =
       Some "<computing_threads>",
       [ "number of concurrent computing threads to be spawned";
         " (default automatically detected from your configuration)" ],
-      TA.Default (fun () -> string_of_int !Parameters.threads),
+      TA.Default (string_of_int Defaults.threads |> Fun.const),
       (fun _ -> Parameters.threads := TA.get_parameter_int_pos ());
     [ "-v"; "--verbose" ],
       None,
       [ "set verbose execution" ],
-      TA.Default (fun () -> "quiet execution"),
+      TA.Default (Fun.const "quiet execution"),
       (fun _ -> Parameters.verbose := true);
     [ "-V"; "--version" ],
       None,
@@ -317,7 +321,7 @@ let () =
   and combination_criterion = ref Defaults.combination_criterion
   and output_zero_kmers = ref Defaults.output_zero_kmers and precision = ref Defaults.precision
   and distance = ref Defaults.distance and distance_normalise = ref Defaults.distance_normalise
-  and unexpected_end_of_output_file f =
+  and catch_unexpected_end_of_output_file f =
     try
       f ()
     with End_of_file ->
@@ -375,13 +379,13 @@ let () =
         | Set_precision p ->
           precision := p
         | To_tables prefix ->
-          unexpected_end_of_output_file
+          catch_unexpected_end_of_output_file
             (fun () ->
               KMerDB.to_files ~precision:!precision ~output_zero_kmers:!output_zero_kmers
                               ~threads:!Parameters.threads ~verbose:!Parameters.verbose
                               !current prefix)
         | To_binary prefix ->
-          unexpected_end_of_output_file
+          catch_unexpected_end_of_output_file
             (fun () -> KMerDB.to_binary ~verbose:!Parameters.verbose !current prefix)
         | Distance_set dist ->
           distance := dist
@@ -390,13 +394,16 @@ let () =
         | To_distances (regexps_1, regexps_2, prefix) ->
           let selected_1 = KMerDB.selected_from_regexps ~verbose:!Parameters.verbose !current regexps_1
           and selected_2 = KMerDB.selected_from_regexps ~verbose:!Parameters.verbose !current regexps_2 in
-          KMerDB.to_distances
-            ~precision:!precision ~normalise:!distance_normalise
-            ~threads:!Parameters.threads ~verbose:!Parameters.verbose
-            !distance !current selected_1 selected_2 prefix)
+          catch_unexpected_end_of_output_file
+            (fun () ->
+              KMerDB.to_distances
+                ~precision:!precision ~normalise:!distance_normalise
+                ~threads:!Parameters.threads ~verbose:!Parameters.verbose
+                !distance !current selected_1 selected_2 prefix))
       program
   with
   | Exception.E (Exception.Kind.Initialize, _, _) | Exception.E (Exception.Kind.IO_Format, _, _) as e ->
+    TA.usage ();
     Exception.to_string e |> String.TermIO.red |> Printf.eprintf "(%s): FATAL: %s\n%!" __FUNCTION__
   | exc ->
     Printf.peprintf "(%s): %s\n%!" __FUNCTION__

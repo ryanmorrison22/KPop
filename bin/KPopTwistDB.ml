@@ -38,10 +38,10 @@ module KeepAtMost =
         try
           let res = int_of_string s in
           if res <= 0 then
-            raise Exit;
+            raise_notrace Exit; (* This one is OK as it will be caught *)
           Some res
         with _ ->
-          Printf.sprintf "(%s): Invalid keep_at_most '%s'" __FUNCTION__ s |> failwith
+          Exception.raise_unrecognized_initializer __FUNCTION__ "value for --keep-at-most option" s
     let to_string = function
       | None -> "all"
       | Some n -> string_of_int n
@@ -90,13 +90,15 @@ module Defaults =
     let neighbors_keep_at_most = Some 6
     let neighbors_guard_policy = Twisted.NeighborsPolicy.of_string "times(2)"
     let neighbors_index_type = Interfaiss.Type.of_string "hnsw(32)"
+    let threads = Processes.Parallel.get_nproc ()
+    let verbose = false
   end
 
 module Parameters =
   struct
     let program = ref []
-    let threads = Processes.Parallel.get_nproc () |> ref
-    let verbose = ref false
+    let threads = ref Defaults.threads
+    let verbose = ref Defaults.verbose
   end
 
 let info = {
@@ -173,7 +175,7 @@ let () =
       Some "<positive_integer>",
       [ "set how many precision digits should be used when outputting numbers";
         "in tabular formats" ],
-      TA.Default (fun () -> string_of_int Defaults.precision_tables),
+      TA.Default (string_of_int Defaults.precision_tables |> Fun.const),
       (fun _ -> Set_precision_tables (TA.get_parameter_int_pos ()) |> List.accum Parameters.program);
     [ "-O"; "--Output" ],
       Some "'T'|'t' <tabular_file_prefix>",
@@ -216,7 +218,7 @@ let () =
         "disregards inertia, i.e. it is the same as standard coordinates, while";
         " 'power(1,1,1)'";
         "leaves inertia unchanged, i.e. it is the same as principal coordinates" ],
-      TA.Default (fun () -> Space.Distance.Metric.to_string Defaults.metric),
+      TA.Default (Space.Distance.Metric.to_string Defaults.metric |> Fun.const),
       (fun _ ->
         Set_metric (TA.get_parameter () |> Space.Distance.Metric.of_string) |> List.accum Parameters.program);
     [ "--distance"; "--distance-function" ],
@@ -228,13 +230,13 @@ let () =
         " 'cosine' is the same as ('euclidean'^2)/2, or 1 - cos theta;";
         " 'angle' is the same as arccos(1 - ('euclidean'^2)/2), or theta,";
         "where theta is the relative angle between the two embeddings" ],
-      TA.Default (fun () -> Space.Distance.to_string Defaults.distance),
+      TA.Default (Space.Distance.to_string Defaults.distance |> Fun.const),
       (fun _ -> Set_distance (TA.get_parameter () |> Space.Distance.of_string) |> List.accum Parameters.program);
     [ "--distance-normalize"; "--distance-normalization" ],
       Some "'true'|'false'",
       [ "whether to normalize twisted vectors before computing distances.";
         "It must be 'true' when the distance function is 'cosine' or 'angle'" ],
-      TA.Default (fun () -> string_of_bool Defaults.distance_normalize),
+      TA.Default (string_of_bool Defaults.distance_normalize |> Fun.const),
       (fun _ -> Set_distance_normalize (TA.get_parameter_boolean ()) |> List.accum Parameters.program);
     [ "-e"; "--embeddings"; "--compute-embeddings"; "--twisted-to-embeddings" ],
       Some "<tabular_file_prefix>",
@@ -251,7 +253,7 @@ let () =
         "when summarizing distances.";
         "Note that more might be printed anyway in case of ties.";
         "The statistics in the summary will be computed on all sequences" ],
-      TA.Default (fun () -> KeepAtMost.to_string Defaults.summary_keep_at_most),
+      TA.Default (KeepAtMost.to_string Defaults.summary_keep_at_most |> Fun.const),
       (fun _ ->
         Set_summary_keep_at_most (TA.get_parameter () |> KeepAtMost.of_string) |> List.accum Parameters.program);
     [ "-d"; "--summarize-distances"; "--compute-and-summarize-distances" ],
@@ -291,7 +293,7 @@ let () =
         " hyperparameter M.";
         "Note that some indices may not be able to return all the existing";
         "nearest neighbors" ],
-      TA.Default (fun () -> Interfaiss.Type.to_string Defaults.neighbors_index_type),
+      TA.Default (Interfaiss.Type.to_string Defaults.neighbors_index_type |> Fun.const),
       (fun _ ->
         Set_neighbors_index_type (TA.get_parameter () |> Interfaiss.Type.of_string) |> List.accum Parameters.program);
     [ "--neighbors-summarize-at-most"; "--neighbors-in-summary" ],
@@ -302,7 +304,7 @@ let () =
         "The statistics in the summary will be computed on all the neighbors";
         "explored according to the policy specified by option";
         "'--neighbors-guard-policy'" ],
-      TA.Default (fun () -> KeepAtMost.to_string Defaults.neighbors_keep_at_most),
+      TA.Default (KeepAtMost.to_string Defaults.neighbors_keep_at_most |> Fun.const),
       (fun _ ->
         Set_neighbors_keep_at_most (TA.get_parameter () |> KeepAtMost.of_string) |> List.accum Parameters.program);
     [ "--neighbors-guard-policy"; "--neighbors-exploration-policy" ],
@@ -318,7 +320,7 @@ let () =
         "will explore m+n nearest neighbors.";
         "The additional neighbors explored are not printed,";
         "but used to compute overall statistics" ],
-      TA.Default (fun () -> Twisted.NeighborsPolicy.to_string Defaults.neighbors_guard_policy),
+      TA.Default (Twisted.NeighborsPolicy.to_string Defaults.neighbors_guard_policy |> Fun.const),
       (fun _ ->
         Set_neighbors_guard_policy
           (TA.get_parameter () |> Twisted.NeighborsPolicy.of_string) |> List.accum Parameters.program);
@@ -340,12 +342,12 @@ let () =
       Some "<positive_integer>",
       [ "set how many precision digits should be used when outputting splits";
         "in plain-text format" ],
-      TA.Default (fun () -> string_of_int Defaults.precision_splits),
+      TA.Default (string_of_int Defaults.precision_splits |> Fun.const),
       (fun _ -> Set_precision_splits (TA.get_parameter_int_pos ()) |> List.accum Parameters.program);
     [ "--splits-algorithm" ],
       Some "'gaps'|'centroids'",
       [ "algorithm to use when computing splits from embeddings" ],
-      TA.Default (fun () -> Twisted.SplitsAlgorithm.to_string Defaults.splits_algorithm),
+      TA.Default (Twisted.SplitsAlgorithm.to_string Defaults.splits_algorithm |> Fun.const),
       (fun _ ->
         Set_splits_algorithm (TA.get_parameter () |> Twisted.SplitsAlgorithm.of_string)
         |> List.accum Parameters.program);
@@ -353,7 +355,7 @@ let () =
       Some "<positive_integer>|'all'",
       [ "set the maximum number of phylogenetic splits to be kept";
         "when generating them from embeddings" ],
-      TA.Default (fun () -> string_of_int Defaults.splits_keep_at_most),
+      TA.Default (string_of_int Defaults.splits_keep_at_most |> Fun.const),
       (fun _ -> Set_splits_keep_at_most (TA.get_parameter_int_pos ()) |> List.accum Parameters.program);
     [ "-S"; "--splits"; "--compute-splits"; "--twisted-to-splits" ],
       Some "<phylosplits_tabular_file_prefix>",
@@ -370,12 +372,12 @@ let () =
       Some "<computing_threads>",
       [ "number of concurrent computing threads to be spawned";
         " (default automatically detected from your configuration)" ],
-      TA.Default (fun () -> string_of_int !Parameters.threads),
+      TA.Default (string_of_int Defaults.threads |> Fun.const),
       (fun _ -> Parameters.threads := TA.get_parameter_int_pos ());
     [ "-v"; "--verbose" ],
       None,
       [ "set verbose execution" ],
-      TA.Default (fun () -> "quiet execution"),
+      TA.Default (Fun.const "quiet execution"),
       (fun _ -> Parameters.verbose := true);
     [ "-V"; "--version" ],
       None,
@@ -446,7 +448,12 @@ let () =
   and neighbors_index_type = ref Defaults.neighbors_index_type
   and precision_tables = ref Defaults.precision_tables and precision_splits = ref Defaults.precision_splits in
   let twisted_of_binary = Twisted.of_binary ~verbose:!Parameters.verbose
-  and twisted_of_files = Twisted.of_files ~threads:!Parameters.threads ~verbose:!Parameters.verbose in
+  and twisted_of_files = Twisted.of_files ~threads:!Parameters.threads ~verbose:!Parameters.verbose
+  and catch_unexpected_end_of_output_file f =
+    try
+      f ()
+    with End_of_file ->
+      Exception.raise_unexpected_end_of_output __FUNCTION__ in
   try
     List.iter
       (function
@@ -469,21 +476,27 @@ let () =
             Twister.add_twisted_from_database
               ~threads:!Parameters.threads ~verbose:!Parameters.verbose !twister !twisted prefix
         | Register_to_binary (Twister, prefix) ->
-          Twister.to_binary ~verbose:!Parameters.verbose !twister prefix
+          catch_unexpected_end_of_output_file
+            (fun () -> Twister.to_binary ~verbose:!Parameters.verbose !twister prefix)
         | Register_to_binary (Twisted, prefix) ->
-          Twisted.to_binary ~verbose:!Parameters.verbose !twisted prefix
+          catch_unexpected_end_of_output_file
+            (fun () -> Twisted.to_binary ~verbose:!Parameters.verbose !twisted prefix)
         | Set_precision_tables prec ->
           precision_tables := prec
         | Set_precision_splits prec ->
           precision_splits := prec
         | Register_to_tables (Twister, prefix) ->
-          Twister.to_files
-            ~precision:!precision_tables ~threads:!Parameters.threads ~verbose:!Parameters.verbose
-            !twister prefix
+          catch_unexpected_end_of_output_file
+            (fun () ->
+              Twister.to_files
+                ~precision:!precision_tables ~threads:!Parameters.threads ~verbose:!Parameters.verbose
+                !twister prefix)
         | Register_to_tables (Twisted, prefix) ->
-          Twisted.to_files
-            ~precision:!precision_tables ~threads:!Parameters.threads ~verbose:!Parameters.verbose
-            !twisted prefix
+          catch_unexpected_end_of_output_file
+            (fun () ->
+              Twisted.to_files
+                ~precision:!precision_tables ~threads:!Parameters.threads ~verbose:!Parameters.verbose
+                !twisted prefix)
         | Set_metric metr ->
           metric := metr
         | Set_distance dist ->
@@ -495,9 +508,11 @@ let () =
             Twisted.to_embeddings
               ~normalize:!distance_normalize ~threads:!Parameters.threads ~verbose:!Parameters.verbose
               !distance !metric !twisted in
-          Matrix.to_file
-            ~precision:!precision_tables ~threads:!Parameters.threads ~verbose:!Parameters.verbose
-            res prefix
+          catch_unexpected_end_of_output_file
+            (fun () ->
+              Matrix.to_file
+                ~precision:!precision_tables ~threads:!Parameters.threads ~verbose:!Parameters.verbose
+                res prefix)
         | Set_splits_algorithm algo ->
           splits_algorithm := algo
         | Set_splits_keep_at_most kam ->
@@ -507,14 +522,17 @@ let () =
             Twisted.get_splits
               ~normalize:!distance_normalize ~threads:!Parameters.threads ~verbose:!Parameters.verbose
               !distance !metric !splits_algorithm !splits_keep_at_most !twisted in
-          Trees.Splits.to_file ~precision:!precision_splits res prefix
+          catch_unexpected_end_of_output_file
+            (fun () -> Trees.Splits.to_file ~precision:!precision_splits res prefix)
         | Set_summary_keep_at_most kam ->
           summary_keep_at_most := kam
         | Summary_from_twisted_binary (prefix_in, prefix_out, output_distance_matrix) ->
-          Twisted.summarize_distances_rowwise
-            ~normalize:!distance_normalize ~keep_at_most:!summary_keep_at_most ~output_distance_matrix
-            ~precision:!precision_tables ~threads:!Parameters.threads ~verbose:!Parameters.verbose
-            !distance !metric (twisted_of_binary prefix_in) !twisted prefix_out
+          catch_unexpected_end_of_output_file
+            (fun () ->
+              Twisted.summarize_distances_rowwise
+                ~normalize:!distance_normalize ~keep_at_most:!summary_keep_at_most ~output_distance_matrix
+                ~precision:!precision_tables ~threads:!Parameters.threads ~verbose:!Parameters.verbose
+                !distance !metric (twisted_of_binary prefix_in) !twisted prefix_out)
         | Set_neighbors_keep_at_most nhm ->
           neighbors_keep_at_most := nhm
         | Set_neighbors_guard_policy gp ->
@@ -522,19 +540,19 @@ let () =
         | Set_neighbors_index_type it ->
           neighbors_index_type := it
         | Summary_from_twisted_neighbors (prefix_in, prefix_out) ->
-          Twisted.summarize_neighbors
-            ~normalize:!distance_normalize ~how_many:!neighbors_keep_at_most
-            ~policy:!neighbors_guard_policy ~index_type:!neighbors_index_type
-            ~threads:!Parameters.threads ~verbose:!Parameters.verbose
-            !metric (twisted_of_binary prefix_in) !twisted prefix_out)
+          catch_unexpected_end_of_output_file
+            (fun () ->
+              Twisted.summarize_neighbors
+                ~normalize:!distance_normalize ~how_many:!neighbors_keep_at_most
+                ~policy:!neighbors_guard_policy ~index_type:!neighbors_index_type
+                ~threads:!Parameters.threads ~verbose:!Parameters.verbose
+                !metric (twisted_of_binary prefix_in) !twisted prefix_out))
       program
   with
   | Exception.E (Exception.Kind.Initialize, _, _) | Exception.E (Exception.Kind.IO_Format, _, _) as e ->
+    TA.usage ();
     Exception.to_string e |> String.TermIO.red |> Printf.eprintf "(%s): FATAL: %s\n%!" __FUNCTION__
   | exc ->
-
-(* TODO: WE SHOULD EXCLUDE THE CASE OF BROKEN PIPE *)
-
     Printf.peprintf "(%s): %s\n%!" __FUNCTION__
       ("FATAL: Uncaught exception: " ^ Printexc.to_string exc |> String.TermIO.red);
     Printf.peprintf "(%s): This should not have happened - please contact <paolo.ribeca@gmail.com>\n%!" __FUNCTION__;

@@ -71,13 +71,15 @@ module Defaults =
     let hasher = KMI.Hasher.K_mers 12
     let weight_field = 0
     let max_results_size = 16777216 (* Or: 4^12 *)
+    (*let threads = Tools.Parallel.get_nproc ()*)
+    let verbose = false
   end
 
 module Parameters =
   struct
     let program = ref []
-    (*let threads = Tools.Parallel.get_nproc () |> ref*)
-    let verbose = ref false
+    (*let threads = ref Defaults.threads*)
+    let verbose = ref Defaults.verbose
   end
 
 let info = {
@@ -120,10 +122,9 @@ let () =
         "Options '-k' and '-g' are mutually exclusive; if multiple are specified";
         "the last one will take effect" ],
       TA.Default
-        (fun () ->
-          match Defaults.hasher with
+        ((match Defaults.hasher with
           | K_mers _ -> KMI.Hasher.to_string Defaults.hasher
-          | Gapped _ -> "not used"),
+          | Gapped _ -> "not used") |> Fun.const),
       (fun _ -> Set_hasher (KMI.Hasher.K_mers (TA.get_parameter_int_pos ())) |> List.accum Parameters.program);
     [ "-g"; "--gapped-k-mer-sizes"; "--gapped-k-mer-lengths" ],
       Some "BLOCK_SIZE GAP_SIZE",
@@ -140,10 +141,9 @@ let () =
         "Options '-k' and '-g' are mutually exclusive; if multiple are specified";
         "the last one will take effect" ],
       TA.Default
-          (fun () ->
-            match Defaults.hasher with
-            | K_mers _ -> "not_used"
-            | Gapped _ -> KMI.Hasher.to_string Defaults.hasher),
+        ((match Defaults.hasher with
+          | K_mers _ -> "not_used"
+          | Gapped _ -> KMI.Hasher.to_string Defaults.hasher) |> Fun.const),
       (fun _ ->
         let k = TA.get_parameter_int_pos () in
         let g = TA.get_parameter_int_pos () in
@@ -154,7 +154,7 @@ let () =
         "If more are present, the ones corresponding to the lowest cardinality";
         "will be removed from memory and printed out, and there will be";
         "repeated hashes in the output" ],
-      TA.Default (fun () -> string_of_int Defaults.max_results_size),
+      TA.Default (string_of_int Defaults.max_results_size |> Fun.const),
       (fun _ -> Set_max_results_size (TA.get_parameter_int_pos ()) |> List.accum Parameters.program);
     [ "-c"; "--content" ],
       Some "'ss-DNA'|'single-stranded-DNA'|'ds-DNA'|'double-stranded-DNA'|'protein'|FULL",
@@ -183,7 +183,7 @@ let () =
         "program to abort.";
         "If a dictionary file is specified, each of its lines is interpreted";
         "as a different dictionary entry/token" ],
-      TA.Default (fun _ -> KMI.Content.to_string Defaults.content),
+      TA.Default (KMI.Content.to_string Defaults.content |> Fun.const),
       (fun _ -> Set_content (TA.get_parameter () |> KMI.Content.of_string) |> List.accum Parameters.program);
     [ "-w"; "--weights"; "--weights-from-sequence-names" ],
       Some "<non_negative_integer>",
@@ -193,11 +193,10 @@ let () =
         "If no such field exists, the program will fail.";
         "If the weight is a float number, the ceiling of such number will be used" ],
       TA.Default
-        (fun _ ->
-          if Defaults.weight_field = 0 then
+        ((if Defaults.weight_field = 0 then
             "do not weigh"
           else
-            string_of_int Defaults.weight_field),
+            string_of_int Defaults.weight_field) |> Fun.const),
       (fun _ -> Set_weight_extractor (TA.get_parameter_int_non_neg ()) |> List.accum Parameters.program);
     TA.make_separator_multiline [ ""; "Input/Output of sequences for processing:" ];
     [ "-f"; "--fasta" ],
@@ -269,13 +268,13 @@ let () =
       Some "<computing_threads>",
       [ "number of concurrent computing threads to be spawned";
         " (default automatically detected from your configuration)" ],
-      TA.Default (fun () -> string_of_int !Parameters.threads),
+      TA.Default (string_of_int Defaults.threads |> Fun.const),
       (fun _ -> Parameters.threads := TA.get_parameter_int_pos ());
 *)
     [ "-v"; "--verbose" ],
       None,
       [ "set verbose execution" ],
-      TA.Default (fun () -> "quiet execution"),
+      TA.Default (Fun.const "quiet execution"),
       (fun _ -> Parameters.verbose := true);
     [ "-V"; "--version" ],
       None,
@@ -301,7 +300,7 @@ let () =
   let db = KMerDB.make_empty () |> ref and content = ref Defaults.content and hasher = ref Defaults.hasher
   and weight_field = ref Defaults.weight_field and max_results_size = ref Defaults.max_results_size
   and reads_cntr = ref 0
-  and unexpected_end_of_output_file f =
+  and catch_unexpected_end_of_output_file f =
     try
       f ()
     with End_of_file ->
@@ -349,7 +348,7 @@ let () =
             Printf.eprintf "%s\r(%s): Added and hashed %d %s.\n%!" String.TermIO.clear __FUNCTION__
               !reads_cntr (String.pluralize_int "read" !reads_cntr);
         | To_file prefix ->
-          unexpected_end_of_output_file
+          catch_unexpected_end_of_output_file
             (fun () -> KMerDB.to_binary ~verbose:!Parameters.verbose !db prefix))
       program
     (*;Printf.eprintf "Times: (encode=%g, trie=%g, array=%g, accumulate=%g)\n%!"
@@ -359,6 +358,7 @@ let () =
       (Tools.Timer.read "KMers.Iterator.Encoder:accumulate");*)
   with
   | Exception.E (Exception.Kind.Initialize, _, _) | Exception.E (Exception.Kind.IO_Format, _, _) as e ->
+    TA.usage ();
     Exception.to_string e |> String.TermIO.red |> Printf.eprintf "(%s): FATAL: %s\n%!" __FUNCTION__
   | exc ->
     Printf.peprintf "(%s): %s\n%!" __FUNCTION__
