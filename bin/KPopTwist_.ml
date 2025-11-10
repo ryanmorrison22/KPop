@@ -81,7 +81,7 @@ let () =
       Some "<binary_file_prefix>",
       [ "load the specified k-mer database in the register and twist it.";
         "File extension is automatically determined";
-        " (will be '.KPopCounter' unless file is '/dev/*')" ],
+        " (will be '.KPopSpectra' unless file is '/dev/*')" ],
       TA.Mandatory,
       (fun _ -> Parameters.input := TA.get_parameter ());
     [ "-o"; "--output" ],

@@ -132,7 +132,7 @@ let () =
     [ "-o"; "--output" ],
       Some "<binary_file_prefix>",
       [ "save the database present in the register to the specified file";
-        " (which will be given extension '.KPopCounter' unless file is '/dev/*')" ],
+        " (which will be given extension '.KPopSpectra' unless file is '/dev/*')" ],
       TA.Optional,
       (fun _ -> To_binary (TA.get_parameter ()) |> List.accum Parameters.program);
     [ "--precision" ],

@@ -105,13 +105,13 @@ let () =
     [ "-i"; "--input" ],
       Some "<binary_file_prefix>",
       [ "load into the register the database present in the specified file";
-        " (which must have extension '.KPopCounter' unless file is '/dev/*')" ],
+        " (which must have extension '.KPopSpectra' unless file is '/dev/*')" ],
       TA.Optional,
       (fun _ -> Of_file (TA.get_parameter ()) |> List.accum Parameters.program);
     [ "-o"; "--output" ],
       Some "<binary_file_prefix>",
       [ "save the database present in the register to the specified file";
-        " (which will be given extension '.KPopCounter' unless file is '/dev/*')" ],
+        " (which will be given extension '.KPopSpectra' unless file is '/dev/*')" ],
       TA.Optional,
       (fun _ -> To_file (TA.get_parameter ()) |> List.accum Parameters.program);
     TA.make_separator_multiline [ ""; "Algorithmic parameters:" ];

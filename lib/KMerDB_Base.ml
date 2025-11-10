@@ -360,13 +360,13 @@ include (
     (* *)
     let make_filename_binary = function
       | w when String.length w >= 5 && String.sub w 0 5 = "/dev/" -> w
-      | prefix -> prefix ^ ".KPopCounter"
+      | prefix -> prefix ^ ".KPopSpectra"
     let to_binary ?(verbose = false) db prefix =
       let fname = make_filename_binary prefix in
       let output = open_out fname in
       if verbose then
         Printf.eprintf "(%s): Outputting DB to file '%s'...%!" __FUNCTION__ fname;
-      output_value output "KPopCounter";
+      output_value output "KPopSpectra";
       output_value output archive_version;
       output_value output {
         db.core with
@@ -387,9 +387,9 @@ include (
         Printf.eprintf "(%s): Reading DB from file '%s'...%!" __FUNCTION__ fname;
       let which = (input_value input: string) in
       let version = (input_value input: string) in
-      if which <> "KPopCounter" then
+      if which <> "KPopSpectra" then
         Exception.raise __FUNCTION__ IO_Format
-          (Printf.sprintf "Unexpected archive type (found '%s', expected 'KPopCounter')" which);
+          (Printf.sprintf "Unexpected archive type (found '%s', expected 'KPopSpectra')" which);
       if version <> archive_version then
         (* We are kind of misusing this function here *)
         Exception.raise_incompatible_archive_version __FUNCTION__ version archive_version;
