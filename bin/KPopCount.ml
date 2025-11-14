@@ -84,8 +84,8 @@ module Parameters =
 
 let info = {
   Tools.Argv.name = "KPopCount";
-  version = "23";
-  date = "09-Nov-2025"
+  version = "24";
+  date = "14-Nov-2025"
 } and authors = [
   "2017-2025", "Paolo Ribeca", "paolo.ribeca@gmail.com"
 ]
@@ -321,24 +321,29 @@ let () =
         | Set_max_results_size mrs ->
           max_results_size := mrs
         | Add_sequences (input, label) ->
-          let current = ref label in
+          let current =
+            begin if label = "" then
+              -1
+            else
+              KMerDB.add_empty_column_if_needed db label
+            end |> ref in
           let k_mer_iterator =
             KMI.make ~max_results_size:!max_results_size ~verbose:!Parameters.verbose
-              !content !hasher (fun hash n -> db := KMerDB.add_counts !db !current hash n) in
+              !content !hasher (fun hash n -> KMerDB.add_counts_unsafe db !current hash n) in
           (* Note that linting is done automatically at a lower level by KMerIterator
               depending on the sequence type, so we disable it here *)
           Files.ReadsIterate.iter ~linter:Sequences.Lint.none ~verbose:false
             (fun _ segm_id read ->
               (* If no global label has been specified, we output one per sequence *)
               if label = "" then
-                current := read.tag;
+                current := KMerDB.add_empty_column_if_needed db read.tag;
               let weight =
                 if !weight_field = 0 then
                   1.
                 else
                   CoverageFromName.extract !weight_field read.tag in
               k_mer_iterator ~weight read.seq;
-              if !Parameters.verbose && !reads_cntr mod 1_000 = 0 then
+              if !Parameters.verbose && !reads_cntr mod 25 = 0 then
                 Printf.eprintf "%s\r(%s): Added and hashed %d %s%!" String.TermIO.clear __FUNCTION__
                   !reads_cntr (String.pluralize_int "read" !reads_cntr);
               if segm_id = 0 then
@@ -350,12 +355,15 @@ let () =
         | To_file prefix ->
           catch_unexpected_end_of_output_file
             (fun () -> KMerDB.to_binary ~verbose:!Parameters.verbose !db prefix))
-      program
-    (*;Printf.eprintf "Times: (encode=%g, trie=%g, array=%g, accumulate=%g)\n%!"
-      (Tools.Timer.read "KMers.Iterator.Encoder:encode")
+      program(*;
+      Printf.eprintf "Times: (content=%g, encode=%g, trie=%g, array=%g, accumulate=%g, finalize=%g, all=%g)\n%!"
+      (Tools.Timer.read "KMers.Iterator.Content")
+      (Tools.Timer.read "KMers.Iterator.Encoder")
       (Tools.Timer.read "KMers.Iterator.Encoder:trie")
       (Tools.Timer.read "KMers.Iterator.Encoder:array")
-      (Tools.Timer.read "KMers.Iterator.Encoder:accumulate");*)
+      (Tools.Timer.read "KMers.Iterator.Accumulator")
+      (Tools.Timer.read "KMers.Iterator.Finalizer")
+      (Tools.Timer.read "KMers.Iterator");*)
   with
   | Exception.E (Exception.Kind.Initialize, _, _) | Exception.E (Exception.Kind.IO_Format, _, _) as e ->
     TA.usage ();

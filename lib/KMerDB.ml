@@ -305,8 +305,7 @@ include (
       if verbose then
         Printf.eprintf "(%s): Adding/replacing spectrum '%s': [%!" __FUNCTION__ new_label;
       (* We allocate the result *)
-      add_empty_column_if_needed db new_label;
-      let new_col_idx = StringHashtbl.find !db.col_names_to_idx new_label in
+      let new_col_idx = add_empty_column_if_needed db new_label in
       let new_col = !db.core.data.(new_col_idx) in
       (* Computing valid labels and maximum normalisation across columns *)
       let found_cols = ref [] and max_norm = ref 0. in

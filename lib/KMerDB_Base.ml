@@ -145,9 +145,10 @@ include (
         meta_names_to_idx = invert_table core.idx_to_meta_names }
     (* Makes space for a new sample named label *)
     let add_empty_column_if_needed db label =
-      let n_cols = !db.core.n_cols in
-      let aug_n_cols = n_cols + 1 in
-      if StringHashtbl.mem !db.col_names_to_idx label |> not then begin
+      match StringHashtbl.find_opt !db.col_names_to_idx label with
+      | None ->
+        let n_cols = !db.core.n_cols in
+        let aug_n_cols = n_cols + 1 in
         StringHashtbl.add !db.col_names_to_idx label n_cols; (* THIS ONE CHANGES !db *)
         db := {
           !db with
@@ -159,11 +160,14 @@ include (
             meta = String.resize_array_array ~is_buffer:true aug_n_cols !db.core.n_meta !db.core.meta;
             data = CountBAVector.resize_array ~is_buffer:true aug_n_cols !db.core.n_rows !db.core.data
           }
-        }
-      end
+        };
+        n_cols
+      | Some n_cols ->
+        n_cols
     (* Makes space for a new k-mer named hash *)
     let add_empty_row_if_needed db hash =
-      if StringHashtbl.mem !db.row_names_to_idx hash |> not then begin
+      match StringHashtbl.find_opt !db.row_names_to_idx hash with
+      | None ->
         let n_rows = !db.core.n_rows in
         let aug_n_rows = n_rows + 1 in
         StringHashtbl.add !db.row_names_to_idx hash n_rows; (* THIS ONE CHANGES !db *)
@@ -180,11 +184,14 @@ include (
             end;
             data = CountBAVector.resize_array ~is_buffer:true !db.core.n_cols aug_n_rows !db.core.data
           }
-        }
-      end
+        };
+        n_rows
+      | Some n_rows ->
+        n_rows
     (* Makes space for a new metadata field named label *)
     let add_empty_meta_if_needed db meta =
-      if StringHashtbl.mem !db.meta_names_to_idx meta |> not then begin
+      match StringHashtbl.find_opt !db.meta_names_to_idx meta with
+      | None ->
         let n_meta = !db.core.n_meta in
         let aug_n_meta = n_meta + 1 in
         StringHashtbl.add !db.meta_names_to_idx meta n_meta; (* THIS ONE CHANGES !db *)
@@ -201,25 +208,24 @@ include (
             end;
             meta = String.resize_array_array ~is_buffer:true !db.core.n_cols aug_n_meta !db.core.meta
           }
-        }
-      end
+        };
+        n_meta
+      | Some n_meta ->
+        n_meta
     (* *)
     let set_metadata db label meta s =
-      let db = ref db in
-      add_empty_column_if_needed db label;
-      add_empty_meta_if_needed db meta;
-      let col_idx = StringHashtbl.find !db.col_names_to_idx label
-      and meta_idx = StringHashtbl.find !db.meta_names_to_idx meta in
-      !db.core.meta.(col_idx).(meta_idx) <- s;
-      !db
+      let col_idx = add_empty_column_if_needed db label
+      and meta_idx = add_empty_meta_if_needed db meta in
+      !db.core.meta.(col_idx).(meta_idx) <- s
     let add_counts db label hash counts =
-      let db = ref db in
-      add_empty_column_if_needed db label;
-      add_empty_row_if_needed db hash;
-      let col_idx = StringHashtbl.find !db.col_names_to_idx label
-      and row_idx = StringHashtbl.find !db.row_names_to_idx hash in
-      CountBAVector.(!db.core.data.(col_idx).+(row_idx) <- counts);
-      !db
+      let col_idx = add_empty_column_if_needed db label
+      and row_idx = add_empty_row_if_needed db hash in
+      CountBAVector.(!db.core.data.(col_idx).+(row_idx) <- counts)
+    let add_counts_unsafe db col_idx hash counts =
+      if col_idx < 0 || col_idx >= !db.core.n_cols then
+        Exception.raise_index_out_of_range __FUNCTION__ col_idx "column set" !db.core.n_cols;
+      let row_idx = add_empty_row_if_needed db hash in
+      CountBAVector.(!db.core.data.(col_idx).+(row_idx) <- counts)
     let add_metadata_file ?(threads = 1) ?(bytes_per_step = 4194304) ?(verbose = false) db path =
       let module MetaIO = Matrix.Base.IO.Make (
         struct
@@ -251,7 +257,7 @@ include (
             (Printf.sprintf "Spectrum '%s' is missing in the target database" label);
         (* We add the metadata associated with the sample *)
         for j = 0 to n_rows - 1 do
-          db := set_metadata !db label meta.row_names.(j) meta.data.(j).(i)
+          set_metadata db label meta.row_names.(j) meta.data.(j).(i)
         done;
         if verbose && !col_num mod 5 = 0 then
           Printf.eprintf "%s\r(%s): Annotated %d/%d %s%!"
@@ -283,13 +289,13 @@ include (
             (Printf.sprintf "Spectrum '%s' is already present in the target database" label);
         (* We add the counts associated with the sample *)
         for j = 0 to suppl.core.n_rows - 1 do
-          base := add_counts !base label suppl.core.idx_to_row_names.(j) CountBAVector.(suppl.core.data.(i).@(j))
+          add_counts base label suppl.core.idx_to_row_names.(j) CountBAVector.(suppl.core.data.(i).@(j))
         done;
         (* We add the metadata associated with the sample *)
         for j = 0 to suppl.core.n_meta - 1 do
-          base := set_metadata !base label suppl.core.idx_to_meta_names.(j) suppl.core.meta.(i).(j)
+          set_metadata base label suppl.core.idx_to_meta_names.(j) suppl.core.meta.(i).(j)
         done;
-        if verbose && !line_num mod 10 = 0 then
+        if verbose && !line_num mod 25 = 0 then
           Printf.eprintf "%s\r(%s): Merged %d/%d %s%!"
             String.TermIO.clear __FUNCTION__ !line_num lines (String.pluralize_int "line" !line_num);
         incr line_num
@@ -431,17 +437,19 @@ include (
     (* Reconstruct non-core inverted hashes *)
     val of_core: marshalled_t -> t
     (* Make space for a new sample *)
-    val add_empty_column_if_needed: t ref -> string -> unit
+    val add_empty_column_if_needed: t ref -> string -> int
     (* Make space for a new metadata label *)
-    val add_empty_meta_if_needed: t ref -> string -> unit
+    val add_empty_meta_if_needed: t ref -> string -> int
     (* Make space for a new k-mer *)
-    val add_empty_row_if_needed: t ref -> string -> unit
+    val add_empty_row_if_needed: t ref -> string -> int
     (* Replace the entry for the specified sample and metadata label with the given string.
        Allocates space if needed *)
-    val set_metadata: t -> string -> string -> string -> t
+    val set_metadata: t ref -> string -> string -> string -> unit
     (* Increase the counts for the specified sample and k-mer by the given amount.
        Allocates space if needed *)
-    val add_counts: t -> string -> string -> float -> t
+    val add_counts: t ref -> string -> string -> float -> unit
+    (* Same as above, but providing the numerical id rather than the label for the sample *)
+    val add_counts_unsafe: t ref -> int -> string -> float -> unit
     val merge: ?verbose:bool -> t -> t -> t
     (* Add metadata - the first field must be the label *)
     val add_metadata_file: ?threads:int -> ?bytes_per_step:int -> ?verbose:bool -> t -> string -> t
