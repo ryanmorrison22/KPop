@@ -448,12 +448,7 @@ let () =
   and neighbors_index_type = ref Defaults.neighbors_index_type
   and precision_tables = ref Defaults.precision_tables and precision_splits = ref Defaults.precision_splits in
   let twisted_of_binary = Twisted.of_binary ~verbose:!Parameters.verbose
-  and twisted_of_files = Twisted.of_files ~threads:!Parameters.threads ~verbose:!Parameters.verbose
-  and catch_unexpected_end_of_output_file f =
-    try
-      f ()
-    with End_of_file ->
-      Exception.raise_unexpected_end_of_output __FUNCTION__ in
+  and twisted_of_files = Twisted.of_files ~threads:!Parameters.threads ~verbose:!Parameters.verbose in
   try
     List.iter
       (function
@@ -476,23 +471,23 @@ let () =
             Twister.add_twisted_from_database
               ~threads:!Parameters.threads ~verbose:!Parameters.verbose !twister !twisted prefix
         | Register_to_binary (Twister, prefix) ->
-          catch_unexpected_end_of_output_file
+          Exception.catch_unexpected_end_of_output __FUNCTION__
             (fun () -> Twister.to_binary ~verbose:!Parameters.verbose !twister prefix)
         | Register_to_binary (Twisted, prefix) ->
-          catch_unexpected_end_of_output_file
+          Exception.catch_unexpected_end_of_output __FUNCTION__
             (fun () -> Twisted.to_binary ~verbose:!Parameters.verbose !twisted prefix)
         | Set_precision_tables prec ->
           precision_tables := prec
         | Set_precision_splits prec ->
           precision_splits := prec
         | Register_to_tables (Twister, prefix) ->
-          catch_unexpected_end_of_output_file
+          Exception.catch_unexpected_end_of_output __FUNCTION__
             (fun () ->
               Twister.to_files
                 ~precision:!precision_tables ~threads:!Parameters.threads ~verbose:!Parameters.verbose
                 !twister prefix)
         | Register_to_tables (Twisted, prefix) ->
-          catch_unexpected_end_of_output_file
+          Exception.catch_unexpected_end_of_output __FUNCTION__
             (fun () ->
               Twisted.to_files
                 ~precision:!precision_tables ~threads:!Parameters.threads ~verbose:!Parameters.verbose
@@ -508,7 +503,7 @@ let () =
             Twisted.to_embeddings
               ~normalize:!distance_normalize ~threads:!Parameters.threads ~verbose:!Parameters.verbose
               !distance !metric !twisted in
-          catch_unexpected_end_of_output_file
+          Exception.catch_unexpected_end_of_output __FUNCTION__
             (fun () ->
               Matrix.to_file
                 ~precision:!precision_tables ~threads:!Parameters.threads ~verbose:!Parameters.verbose
@@ -522,12 +517,12 @@ let () =
             Twisted.get_splits
               ~normalize:!distance_normalize ~threads:!Parameters.threads ~verbose:!Parameters.verbose
               !distance !metric !splits_algorithm !splits_keep_at_most !twisted in
-          catch_unexpected_end_of_output_file
+          Exception.catch_unexpected_end_of_output __FUNCTION__
             (fun () -> Trees.Splits.to_file ~precision:!precision_splits res prefix)
         | Set_summary_keep_at_most kam ->
           summary_keep_at_most := kam
         | Summary_from_twisted_binary (prefix_in, prefix_out, output_distance_matrix) ->
-          catch_unexpected_end_of_output_file
+          Exception.catch_unexpected_end_of_output __FUNCTION__
             (fun () ->
               Twisted.summarize_distances_rowwise
                 ~normalize:!distance_normalize ~keep_at_most:!summary_keep_at_most ~output_distance_matrix
@@ -540,7 +535,7 @@ let () =
         | Set_neighbors_index_type it ->
           neighbors_index_type := it
         | Summary_from_twisted_neighbors (prefix_in, prefix_out) ->
-          catch_unexpected_end_of_output_file
+          Exception.catch_unexpected_end_of_output __FUNCTION__
             (fun () ->
               Twisted.summarize_neighbors
                 ~normalize:!distance_normalize ~how_many:!neighbors_keep_at_most
@@ -548,14 +543,9 @@ let () =
                 ~threads:!Parameters.threads ~verbose:!Parameters.verbose
                 !metric (twisted_of_binary prefix_in) !twisted prefix_out))
       program
-  with
-  | Exception.E (Exception.Kind.Initialize, _, _) | Exception.E (Exception.Kind.IO_Format, _, _) as e ->
-    TA.usage ();
-    Exception.to_string e |> String.TermIO.red |> Printf.eprintf "(%s): FATAL: %s\n%!" __FUNCTION__
-  | exc ->
-    Printf.peprintf "(%s): %s\n%!" __FUNCTION__
-      ("FATAL: Uncaught exception: " ^ Printexc.to_string exc |> String.TermIO.red);
-    Printf.peprintf "(%s): This should not have happened - please contact <paolo.ribeca@gmail.com>\n%!" __FUNCTION__;
-    Printf.peprintf "(%s): You might also wish to rerun me with option -x to get a full backtrace.\n%!" __FUNCTION__;
-    Printexc.print_backtrace stderr
+  with e ->
+    Exception.handle __FUNCTION__ TA.usage (fun () ->
+      Printf.peprintf "(%s): This should not have happened - please contact <paolo.ribeca@gmail.com>\n%!" __FUNCTION__;
+      Printf.peprintf "(%s): You might also wish to rerun me with option -x to get a full backtrace.\n%!" __FUNCTION__
+    ) e
 

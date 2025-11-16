@@ -320,12 +320,7 @@ let () =
   let current = KMerDB.make_empty () |> ref and selected = ref StringSet.empty
   and combination_criterion = ref Defaults.combination_criterion
   and output_zero_kmers = ref Defaults.output_zero_kmers and precision = ref Defaults.precision
-  and distance = ref Defaults.distance and distance_normalise = ref Defaults.distance_normalise
-  and catch_unexpected_end_of_output_file f =
-    try
-      f ()
-    with End_of_file ->
-      Exception.raise_unexpected_end_of_output __FUNCTION__ in
+  and distance = ref Defaults.distance and distance_normalise = ref Defaults.distance_normalise in
   try
     List.iter
       (function
@@ -379,13 +374,13 @@ let () =
         | Set_precision p ->
           precision := p
         | To_tables prefix ->
-          catch_unexpected_end_of_output_file
+          Exception.catch_unexpected_end_of_output __FUNCTION__
             (fun () ->
               KMerDB.to_files ~precision:!precision ~output_zero_kmers:!output_zero_kmers
                               ~threads:!Parameters.threads ~verbose:!Parameters.verbose
                               !current prefix)
         | To_binary prefix ->
-          catch_unexpected_end_of_output_file
+          Exception.catch_unexpected_end_of_output __FUNCTION__
             (fun () -> KMerDB.to_binary ~verbose:!Parameters.verbose !current prefix)
         | Distance_set dist ->
           distance := dist
@@ -394,21 +389,16 @@ let () =
         | To_distances (regexps_1, regexps_2, prefix) ->
           let selected_1 = KMerDB.selected_from_regexps ~verbose:!Parameters.verbose !current regexps_1
           and selected_2 = KMerDB.selected_from_regexps ~verbose:!Parameters.verbose !current regexps_2 in
-          catch_unexpected_end_of_output_file
+          Exception.catch_unexpected_end_of_output __FUNCTION__
             (fun () ->
               KMerDB.to_distances
                 ~precision:!precision ~normalise:!distance_normalise
                 ~threads:!Parameters.threads ~verbose:!Parameters.verbose
                 !distance !current selected_1 selected_2 prefix))
       program
-  with
-  | Exception.E (Exception.Kind.Initialize, _, _) | Exception.E (Exception.Kind.IO_Format, _, _) as e ->
-    TA.usage ();
-    Exception.to_string e |> String.TermIO.red |> Printf.eprintf "(%s): FATAL: %s\n%!" __FUNCTION__
-  | exc ->
-    Printf.peprintf "(%s): %s\n%!" __FUNCTION__
-      ("FATAL: Uncaught exception: " ^ Printexc.to_string exc |> String.TermIO.red);
-    Printf.peprintf "(%s): This should not have happened - please contact <paolo.ribeca@gmail.com>\n%!" __FUNCTION__;
-    Printf.peprintf "(%s): You might also wish to rerun me with option -x to get a full backtrace.\n%!" __FUNCTION__;
-    Printexc.print_backtrace stderr
+  with e ->
+    Exception.handle __FUNCTION__ TA.usage (fun () ->
+      Printf.peprintf "(%s): This should not have happened - please contact <paolo.ribeca@gmail.com>\n%!" __FUNCTION__;
+      Printf.peprintf "(%s): You might also wish to rerun me with option -x to get a full backtrace.\n%!" __FUNCTION__
+    ) e
 

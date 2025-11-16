@@ -54,23 +54,31 @@ module KMerIterator =
   end
 module KMI = KMerIterator
 
-type to_do_t =
-  | Empty
-  | Of_file of string
-  | Set_content of KMI.Content.t
-  | Set_hasher of KMI.Hasher.t
-  | Set_weight_extractor of int
-  | Set_max_results_size of int
-  (* The string is the label - if empty, each sequence names is treated as a label *)
-  | Add_sequences of Files.Type.t * string
-  | To_file of string
+module Action =
+  struct
+    type t =
+      | Empty
+      | Of_file of string
+      | Set_content of KMI.Content.t
+      | Set_hasher of KMI.Hasher.t
+      | Set_weight_extractor of int
+      (* The string is the label - if empty, each sequence names is treated as a label *)
+      | Add_sequences of (Files.Type.t * string) list
+      | To_file of string
+    let compact_add_sequences program file_type s =
+      program :=
+        match !program with
+        | Add_sequences l :: tl ->
+          Add_sequences ((file_type, s) :: l) :: tl
+        | l ->
+          Add_sequences [file_type, s] :: l
+  end
 
 module Defaults =
   struct
     let content = KMI.Content.of_string "ds-DNA"
     let hasher = KMI.Hasher.K_mers 12
     let weight_field = 0
-    let max_results_size = 16777216 (* Or: 4^12 *)
     (*let threads = Tools.Parallel.get_nproc ()*)
     let verbose = false
   end
@@ -84,8 +92,8 @@ module Parameters =
 
 let info = {
   Tools.Argv.name = "KPopCount";
-  version = "24";
-  date = "14-Nov-2025"
+  version = "25";
+  date = "16-Nov-2025"
 } and authors = [
   "2017-2025", "Paolo Ribeca", "paolo.ribeca@gmail.com"
 ]
@@ -101,7 +109,7 @@ let () =
       None,
       [ "load an empty database into the register" ],
       TA.Optional,
-      (fun _ -> Empty |> List.accum Parameters.program);
+      (fun _ -> Action.Empty |> List.accum Parameters.program);
     [ "-i"; "--input" ],
       Some "<binary_file_prefix>",
       [ "load into the register the database present in the specified file";
@@ -148,14 +156,6 @@ let () =
         let k = TA.get_parameter_int_pos () in
         let g = TA.get_parameter_int_pos () in
         Set_hasher (KMI.Hasher.Gapped (k, g)) |> List.accum Parameters.program);
-    [ "--max-results-size" ],
-      Some "<positive_integer>",
-      [ "maximum number of k-mer hashes to be kept in memory at any given time.";
-        "If more are present, the ones corresponding to the lowest cardinality";
-        "will be removed from memory and printed out, and there will be";
-        "repeated hashes in the output" ],
-      TA.Default (string_of_int Defaults.max_results_size |> Fun.const),
-      (fun _ -> Set_max_results_size (TA.get_parameter_int_pos ()) |> List.accum Parameters.program);
     [ "-c"; "--content" ],
       Some "'ss-DNA'|'single-stranded-DNA'|'ds-DNA'|'double-stranded-DNA'|'protein'|FULL",
       [ "set how contents of following input files should be interpreted.";
@@ -213,7 +213,7 @@ let () =
       (fun _ ->
         let path = TA.get_parameter () in
         let label = TA.get_parameter () in
-        Add_sequences (Files.Type.FASTA path, label) |> List.accum Parameters.program);
+        Action.compact_add_sequences Parameters.program (Files.Type.FASTA path) label);
     [ "-s"; "--single-end" ],
       Some "<fastq_file_name> <label>",
       [ "process the sequences contained in the specified FASTQ input file";
@@ -229,7 +229,7 @@ let () =
       (fun _ ->
         let path = TA.get_parameter () in
         let label = TA.get_parameter () in
-        Add_sequences (SingleEndFASTQ path, label) |> List.accum Parameters.program);
+        Action.compact_add_sequences Parameters.program (SingleEndFASTQ path) label);
     [ "-p"; "--paired-end" ],
       Some "<fastq_file_name1> <fastq_file_name2> <label>",
       [ "process the sequences contained in the specified FASTQ input file";
@@ -246,7 +246,7 @@ let () =
         let path1 = TA.get_parameter () in
         let path2 = TA.get_parameter () in
         let label = TA.get_parameter () in
-        Add_sequences (PairedEndFASTQ (path1, path2), label) |> List.accum Parameters.program);
+        Action.compact_add_sequences Parameters.program (PairedEndFASTQ (path1, path2)) label);
     [ "-t"; "--tabular" ],
       Some "<fasta_file_name> <label>",
       [ "process the sequences contained in the specified tabular input file.";
@@ -261,7 +261,7 @@ let () =
       (fun _ ->
         let path = TA.get_parameter () in
         let label = TA.get_parameter () in
-        Add_sequences (Files.Type.Tabular path, label) |> List.accum Parameters.program);
+        Action.compact_add_sequences Parameters.program (Files.Type.Tabular path) label);
     TA.make_separator_multiline [ "Miscellaneous options."; "They are set immediately" ];
 (*
     [ "-T"; "--threads" ],
@@ -298,17 +298,11 @@ let () =
     TA.header ();
   (* These are the registers available to the program *)
   let db = KMerDB.make_empty () |> ref and content = ref Defaults.content and hasher = ref Defaults.hasher
-  and weight_field = ref Defaults.weight_field and max_results_size = ref Defaults.max_results_size
-  and reads_cntr = ref 0
-  and catch_unexpected_end_of_output_file f =
-    try
-      f ()
-    with End_of_file ->
-      Exception.raise_unexpected_end_of_output __FUNCTION__ in
+  and weight_field = ref Defaults.weight_field in
   try
     List.iter
       (function
-        | Empty ->
+        | Action.Empty ->
           db := KMerDB.make_empty ()
         | Of_file prefix ->
           db := KMerDB.of_binary ~verbose:!Parameters.verbose prefix
@@ -318,60 +312,58 @@ let () =
           hasher := h
         | Set_weight_extractor wf ->
           weight_field := wf
-        | Set_max_results_size mrs ->
-          max_results_size := mrs
-        | Add_sequences (input, label) ->
-          let current =
-            begin if label = "" then
-              -1
-            else
-              KMerDB.add_empty_column_if_needed db label
-            end |> ref in
-          let k_mer_iterator =
-            KMI.make ~max_results_size:!max_results_size ~verbose:!Parameters.verbose
-              !content !hasher (fun hash n -> KMerDB.add_counts_unsafe db !current hash n) in
-          (* Note that linting is done automatically at a lower level by KMerIterator
-              depending on the sequence type, so we disable it here *)
-          Files.ReadsIterate.iter ~linter:Sequences.Lint.none ~verbose:false
-            (fun _ segm_id read ->
-              (* If no global label has been specified, we output one per sequence *)
-              if label = "" then
-                current := KMerDB.add_empty_column_if_needed db read.tag;
-              let weight =
-                if !weight_field = 0 then
-                  1.
-                else
-                  CoverageFromName.extract !weight_field read.tag in
-              k_mer_iterator ~weight read.seq;
-              if !Parameters.verbose && !reads_cntr mod 25 = 0 then
-                Printf.eprintf "%s\r(%s): Added and hashed %d %s%!" String.TermIO.clear __FUNCTION__
-                  !reads_cntr (String.pluralize_int "read" !reads_cntr);
-              if segm_id = 0 then
-                incr reads_cntr)
-            (Files.ReadsIterate.add_from_files Files.ReadsIterate.empty [| input |]);
+        | Add_sequences files ->
+          let current = -1 |> ref and file_cntr = ref 0 and read_cntr = ref 0 in
+          let k_mer_iterator, k_mer_finalizer =
+            KMI.make ~verbose:!Parameters.verbose !content !hasher
+              (fun hash n -> KMerDB.add_counts_unsafe db !current hash n) in
+          List.iter
+            (fun (input, label) ->
+              incr file_cntr;
+              (* Note that linting is done automatically at a lower level by KMerIterator
+                  depending on the sequence type, so we disable it here *)
+              Files.ReadsIterate.iter ~linter:Sequences.Lint.none ~verbose:false
+                (fun _ segm_id read ->
+                  let weight =
+                    if !weight_field = 0 then
+                      1.
+                    else
+                      CoverageFromName.extract !weight_field read.tag in
+                  k_mer_iterator ~weight read.seq;
+                  (* If no global label has been specified, we output one spectrum per sequence *)
+                  if label = "" then begin
+                    current := KMerDB.add_empty_column_if_needed db read.tag;
+                    k_mer_finalizer ()
+                  end;
+                  if !Parameters.verbose && !read_cntr mod 25 = 0 then
+                    Printf.eprintf "%s\r(%s): Hashed and added %d %s from %d %s%!" String.TermIO.clear __FUNCTION__
+                      !read_cntr (String.pluralize_int "read" !read_cntr)
+                      !file_cntr (String.pluralize_int "file" !file_cntr);
+                  if segm_id = 0 then
+                    incr read_cntr)
+                (Files.ReadsIterate.add_from_files Files.ReadsIterate.empty [| input |]);
+              (* If a global label has been specified, we output one spectrum for the whole file *)
+              if label <> "" then begin
+                current := KMerDB.add_empty_column_if_needed db label;
+                k_mer_finalizer ()
+              end)
+            (* Files will have been inverted during input compaction *)
+            (List.rev files);
           if !Parameters.verbose then
-            Printf.eprintf "%s\r(%s): Added and hashed %d %s.\n%!" String.TermIO.clear __FUNCTION__
-              !reads_cntr (String.pluralize_int "read" !reads_cntr);
+            Printf.eprintf "%s\r(%s): Hashed and added %d %s from %d %s.\n%!" String.TermIO.clear __FUNCTION__
+              !read_cntr (String.pluralize_int "read" !read_cntr)
+              !file_cntr (String.pluralize_int "file" !file_cntr)
         | To_file prefix ->
-          catch_unexpected_end_of_output_file
+          Exception.catch_unexpected_end_of_output __FUNCTION__
             (fun () -> KMerDB.to_binary ~verbose:!Parameters.verbose !db prefix))
-      program(*;
-      Printf.eprintf "Times: (content=%g, encode=%g, trie=%g, array=%g, accumulate=%g, finalize=%g, all=%g)\n%!"
-      (Tools.Timer.read "KMers.Iterator.Content")
-      (Tools.Timer.read "KMers.Iterator.Encoder")
-      (Tools.Timer.read "KMers.Iterator.Encoder:trie")
-      (Tools.Timer.read "KMers.Iterator.Encoder:array")
-      (Tools.Timer.read "KMers.Iterator.Accumulator")
-      (Tools.Timer.read "KMers.Iterator.Finalizer")
-      (Tools.Timer.read "KMers.Iterator");*)
-  with
-  | Exception.E (Exception.Kind.Initialize, _, _) | Exception.E (Exception.Kind.IO_Format, _, _) as e ->
-    TA.usage ();
-    Exception.to_string e |> String.TermIO.red |> Printf.eprintf "(%s): FATAL: %s\n%!" __FUNCTION__
-  | exc ->
-    Printf.peprintf "(%s): %s\n%!" __FUNCTION__
-      ("FATAL: Uncaught exception: " ^ Printexc.to_string exc |> String.TermIO.red);
-    Printf.peprintf "(%s): This should not have happened - please contact <paolo.ribeca@gmail.com>\n%!" __FUNCTION__;
-    Printf.peprintf "(%s): You might also wish to rerun me with option -x to get a full backtrace.\n%!" __FUNCTION__;
-    Printexc.print_backtrace stderr
-
+      program;
+    if !Parameters.verbose then
+      Printf.eprintf "(%s): Timers: (iterate=%g (lint=%g, encode=%g, accumulate=%g), finalize=%g)\n%!" __FUNCTION__
+        (Tools.Timer.read "KMers.Iterator.Iterator") (Tools.Timer.read "KMers.Iterator.Linter")
+        (Tools.Timer.read "KMers.Iterator.Encoder") (Tools.Timer.read "KMers.Iterator.Accumulator")
+        (Tools.Timer.read "KMers.Iterator.Finalizer")
+  with e ->
+    Exception.handle __FUNCTION__ TA.usage (fun () ->
+      Printf.peprintf "(%s): This should not have happened - please contact <paolo.ribeca@gmail.com>\n%!" __FUNCTION__;
+      Printf.peprintf "(%s): You might also wish to rerun me with option -x to get a full backtrace.\n%!" __FUNCTION__
+    ) e
