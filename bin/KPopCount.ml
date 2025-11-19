@@ -370,12 +370,14 @@ let () =
                 while Iter.is_empty !it && !file_idx < num_files do
                   Iter.delete !it;
                   incr file_idx;
-                  (* If we are done with the current file, let's open the next one *)
-                  let input, label = files.(!file_idx) in
-                  current_label := label;
-                  (* Note that linting is done automatically at a lower level by KMerIterator
-                      depending on the sequence type, so we disable it here *)
-                  it := Iter.create (Sequences.Lint.none ~keep_lowercase:true ~keep_dashes:true, input)
+                  if !file_idx < num_files then begin
+                    (* If we are done with the current file, let's open the next one *)
+                    let input, label = files.(!file_idx) in
+                    current_label := label;
+                    (* Note that linting is done automatically at a lower level by KMerIterator
+                        depending on the sequence type, so we disable it here *)
+                    it := Iter.create (Sequences.Lint.none ~keep_lowercase:true ~keep_dashes:true, input)
+                  end
                 done;
                 if !file_idx = num_files then
                   raise End_of_file;

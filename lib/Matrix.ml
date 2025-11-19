@@ -16,9 +16,6 @@
 open BiOCamLib
 open Better
 
-let ( .@() ) = Float.Array.( .@() )
-let ( .@()<- ) = Float.Array.( .@()<- )
-
 (* Extends BiOCamLib matrix class with distance machinery.
    Encapsulation checks are not performed at this level *)
 module Base:
@@ -37,6 +34,8 @@ module Base:
                               Space.Distance.t -> Float.Array.t -> t -> t -> t
   end
 = struct
+    let ( .@() ) = Float.Array.( .@() )
+    let ( .@()<- ) = Float.Array.( .@()<- )
     include Matrix
     (* Compute normalisations for rows *)
     let get_normalizations ?(threads = 1) ?(elements_per_step = 10000) ?(verbose = false) distance metric m =
