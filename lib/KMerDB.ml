@@ -665,7 +665,11 @@ include (
         wants the table that way) these are laid out as the _transpose_ of the internal
         data, which complicates things a bit when reading things.
        This might disappear in the future, in particular if we switch to a native
-        implementation of CA *)
+        implementation of CA.
+       Note that while the internal order of metadata labels, row labels and column names
+        is determined by the order in which they get added to the database, we output them
+        sorted to make things more comparable. For the time being, this reordering also
+        gets automatically transmitted to CA, as tabular output is what R uses as input *)
     let make_filename_meta_table = function
       | w when String.length w >= 5 && String.sub w 0 5 = "/dev/" -> w
       | prefix -> prefix ^ ".KPopMMatrix.txt"
@@ -699,10 +703,26 @@ include (
           if i < db.core.n_cols then
             List.accum cols (col_name, i))
         db.core.idx_to_col_names;
-      let meta = Array.of_rlist !meta and rows = Array.of_rlist !rows and cols = Array.of_rlist !cols in
+      (* We want to re-sort labels based on lexicolength order *)
+      let ll_sort a =
+        let l = Array.length a and m = ref StringLLMap.empty in
+        Array.iter
+          (fun (name, src_i) ->
+            m := StringLLMap.add name src_i !m)
+          a;
+        let sorted = Array.make l "" and permutation = Array.make l (-1) in
+        StringLLMap.iteri
+          (fun tgt_i label src_i ->
+            sorted.(tgt_i) <- label;
+            permutation.(tgt_i) <- src_i)
+          !m;
+        sorted, permutation in
+      let meta, meta_perm = Array.of_rlist !meta |> ll_sort
+      and rows, rows_perm = Array.of_rlist !rows |> ll_sort
+      and cols, cols_perm = Array.of_rlist !cols |> ll_sort in
       let n_rows = Array.length rows and n_meta = Array.length meta and n_cols = Array.length cols in
-      (* There must be at least one metadata/row/column name to print *)
-      if (n_meta + n_rows) > 0 || n_cols > 0 then begin
+      (* There must be at least one metadata field label and one column label to print *)
+      if n_meta > 0 && n_cols > 0 then begin
         let module MetaIO = Matrix.Base.IO.Make (
           struct
             module Element =
@@ -714,17 +734,19 @@ include (
             type t = string array
             let create _ = assert false
             let set _ _ _ = assert false
-            let get_col_name _ i = cols.(i) |> fst [@@inline]
-            let get_row_name _ i = meta.(i) |> fst [@@inline]
+            let get_col_name _ i = cols.(i) [@@inline]
+            let get_row_name _ i = meta.(i) [@@inline]
             let get_datum _ i j =
               (* Remember that we are writing out the _transposed_ matrix *)
-              let i = meta.(i) |> snd and j = cols.(j) |> snd in
-              db.core.meta.(j).(i)
+              db.core.meta.(cols_perm.(j)).(meta_perm.(i))
           end
         ) in
         let output = make_filename_meta_table prefix |> open_out in
         MetaIO.to_channel ~precision ~threads ~elements_per_step ~verbose (MetaIO.Virtual (n_meta, n_cols)) output;
-        close_out output;
+        close_out output
+      end;
+      (* There must be at least one row label and one column label to print *)
+      if n_rows > 0 && n_cols > 0 then begin
         let module KmerIO = Matrix.Base.IO.Make (
           struct
             module Element =
@@ -736,12 +758,11 @@ include (
             type t = CountBAVector.t
             let create _ = assert false
             let set _ _ _ = assert false
-            let get_col_name _ i = cols.(i) |> fst [@@inline]
-            let get_row_name _ i = rows.(i) |> fst [@@inline]
+            let get_col_name _ i = cols.(i) [@@inline]
+            let get_row_name _ i = rows.(i) [@@inline]
             let get_datum _ i j =
               (* Remember that we are writing out the _transposed_ matrix *)
-              let i = rows.(i) |> snd and j = cols.(j) |> snd in
-              db.core.data.(j).@(i)
+              db.core.data.(cols_perm.(j)).@(rows_perm.(i))
           end
         ) in
         let output = make_filename_kmer_table prefix |> open_out in
