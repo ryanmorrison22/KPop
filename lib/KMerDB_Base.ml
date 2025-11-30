@@ -221,11 +221,13 @@ include (
       let col_idx = add_empty_column_if_needed db label
       and row_idx = add_empty_row_if_needed db hash in
       CountBAVector.(!db.core.data.(col_idx).+(row_idx) <- counts)
-    let add_counts_unsafe db col_idx hash counts =
-      if col_idx < 0 || col_idx >= !db.core.n_cols then
+    let add_counts_unsafe db col_idx row_idx counts =
+      (*if col_idx < 0 || col_idx >= !db.core.n_cols then
         Exception.raise_index_out_of_range __FUNCTION__ col_idx "column set" !db.core.n_cols;
-      let row_idx = add_empty_row_if_needed db hash in
+      if row_idx < 0 || row_idx >= !db.core.n_rows then
+        Exception.raise_index_out_of_range __FUNCTION__ row_idx "row set" !db.core.n_rows;*)
       CountBAVector.(!db.core.data.(col_idx).+(row_idx) <- counts)
+      [@@inline]
     let add_metadata_file ?(threads = 1) ?(bytes_per_step = 4194304) ?(verbose = false) db path =
       let module MetaIO = Matrix.Base.IO.Make (
         struct
@@ -448,8 +450,8 @@ include (
     (* Increase the counts for the specified sample and k-mer by the given amount.
        Allocates space if needed *)
     val add_counts: t ref -> string -> string -> float -> unit
-    (* Same as above, but providing the numerical id rather than the label for the sample *)
-    val add_counts_unsafe: t ref -> int -> string -> float -> unit
+    (* Same as above, but providing numerical IDs rather than labels for both sample and hash *)
+    val add_counts_unsafe: t ref -> int -> int -> float -> unit
     val merge: ?verbose:bool -> t -> t -> t
     (* Add metadata - the first field must be the label *)
     val add_metadata_file: ?threads:int -> ?bytes_per_step:int -> ?verbose:bool -> t -> string -> t

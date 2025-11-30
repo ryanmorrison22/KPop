@@ -571,7 +571,7 @@ include (
         let n = Array.length m.matrix.row_names in
         let cols_per_step = max 1 (elements_per_step / n) and processed_cols = ref 0
         and d = Array.length m.matrix.col_names in
-        let row_permutations = Array.make d [||] and gaps = Tools.StackArray.create () in
+        let row_permutations = Array.make d [||] and gaps = Tools.ArrayStack.create () in
         (* Generate points to be computed by the parallel process *)
         Processes.Parallel.process_stream_chunkwise
           (fun () ->
@@ -604,7 +604,7 @@ include (
             List.iteri
               (fun offs_i (perm_i, gaps_i) ->
                 row_permutations.(lo_col + offs_i) <- perm_i;
-                Tools.StackArray.push_array gaps gaps_i;
+                Tools.ArrayStack.push_array gaps gaps_i;
                 if verbose && !processed_cols mod cols_per_step = 0 then
                   Printf.eprintf "%s\r(%s): Done %d/%d cols%!"
                     String.TermIO.clear __FUNCTION__ !processed_cols n;
@@ -615,7 +615,7 @@ include (
           Printf.eprintf "%s\r(%s): Done %d/%d cols.\n%!"
             String.TermIO.clear __FUNCTION__ !processed_cols n;
         (* We sort the gaps *)
-        let gaps = Tools.StackArray.contents gaps in
+        let gaps = Tools.ArrayStack.contents gaps in
         Array.sort
           (fun (gap_1, dim_1, idx_1) (gap_2, dim_2, idx_2) ->
             (* We sort splits by decreasing gap size first, then by increasing dimension (and row index) *)

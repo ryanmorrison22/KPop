@@ -703,23 +703,23 @@ include (
           if i < db.core.n_cols then
             List.accum cols (col_name, i))
         db.core.idx_to_col_names;
-      (* We want to re-sort labels based on lexicolength order *)
-      let ll_sort a =
-        let l = Array.length a and m = ref StringLLMap.empty in
+      (* We want to re-sort labels based on lexicographic order *)
+      let sort a =
+        let l = Array.length a and m = ref StringMap.empty in
         Array.iter
           (fun (name, src_i) ->
-            m := StringLLMap.add name src_i !m)
+            m := StringMap.add name src_i !m)
           a;
         let sorted = Array.make l "" and permutation = Array.make l (-1) in
-        StringLLMap.iteri
+        StringMap.iteri
           (fun tgt_i label src_i ->
             sorted.(tgt_i) <- label;
             permutation.(tgt_i) <- src_i)
           !m;
         sorted, permutation in
-      let meta, meta_perm = Array.of_rlist !meta |> ll_sort
-      and rows, rows_perm = Array.of_rlist !rows |> ll_sort
-      and cols, cols_perm = Array.of_rlist !cols |> ll_sort in
+      let meta, meta_perm = Array.of_rlist !meta |> sort
+      and rows, rows_perm = Array.of_rlist !rows |> sort
+      and cols, cols_perm = Array.of_rlist !cols |> sort in
       let n_rows = Array.length rows and n_meta = Array.length meta and n_cols = Array.length cols in
       (* There must be at least one metadata field label and one column label to print *)
       if n_meta > 0 && n_cols > 0 then begin
