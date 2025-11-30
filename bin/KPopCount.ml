@@ -19,7 +19,7 @@ open KPop
 
 module CoverageFromName =
   struct
-    let regexp = Str.regexp "[+-]?\\(\\([0-9]+[.]?[0-9]*\\)\\|\\([.][0-9]+\\)\\)\\([eE][-+]?[0-9]+\\)?"
+    let regexp = Str.regexp {|[+-]?\(\([0-9]+[.]?[0-9]*\)\|\([.][0-9]+\)\)\([eE][-+]?[0-9]+\)?|}
     (* Field number is 1-based! *)
     let extract n_field s =
       let numbers =
