@@ -63,15 +63,16 @@ module Action =
       | Set_hasher of KMI.Hasher.t
       | Set_weight_extractor of int
       (* The string is the label - if empty, each sequence names is treated as a label *)
-      | Add_sequences of (Files.Reads.t * string) list
+      | Add_sequences of (string * Files.Reads.t) list
       | To_file of string
-    let compact_add_sequences program file_type s =
+    (* Collects together into a list all consecutive inputs having the same format *)
+    let compact_add_sequences program s input =
       program :=
         match !program with
         | Add_sequences l :: tl ->
-          Add_sequences ((file_type, s) :: l) :: tl
+          Add_sequences ((s, input) :: l) :: tl
         | l ->
-          Add_sequences [file_type, s] :: l
+          Add_sequences [s, input] :: l
   end
 
 module Defaults =
@@ -92,8 +93,8 @@ module Parameters =
 
 let info = {
   Tools.Argv.name = "KPopCount";
-  version = "26";
-  date = "16-Nov-2025"
+  version = "27";
+  date = "30-Nov-2025"
 } and authors = [
   "2017-2025", "Paolo Ribeca", "paolo.ribeca@gmail.com"
 ]
@@ -200,7 +201,7 @@ let () =
       (fun _ -> Set_weight_extractor (TA.get_parameter_int_non_neg ()) |> List.accum Parameters.program);
     TA.make_separator_multiline [ ""; "Input/Output of sequences for processing:" ];
     [ "-f"; "--fasta" ],
-      Some "<fasta_file_name> <label>",
+      Some "<label> <fasta_file_name>",
       [ "process the sequences contained in the specified FASTA input file.";
         "If a label is specified, the hashes extracted from all the sequences";
         "are collected into one spectrum having the label as name; if the label is";
@@ -211,11 +212,11 @@ let () =
         "contents are expected to be homogeneous across inputs" ],
       TA.Optional,
       (fun _ ->
-        let path = TA.get_parameter () in
         let label = TA.get_parameter () in
-        Action.compact_add_sequences Parameters.program (Files.Reads.FASTA path) label);
+        let path = TA.get_parameter () in
+        Action.compact_add_sequences Parameters.program label (Files.Reads.FASTA path));
     [ "-s"; "--single-end" ],
-      Some "<fastq_file_name> <label>",
+      Some "<label> <fastq_file_name>",
       [ "process the sequences contained in the specified FASTQ input file";
         "containing single-end sequencing reads.";
         "If a label is specified, the hashes extracted from all the sequences";
@@ -227,9 +228,9 @@ let () =
         "contents are expected to be homogeneous across inputs" ],
       TA.Optional,
       (fun _ ->
-        let path = TA.get_parameter () in
         let label = TA.get_parameter () in
-        Action.compact_add_sequences Parameters.program (SingleEndFASTQ path) label);
+        let path = TA.get_parameter () in
+        Action.compact_add_sequences Parameters.program label (SingleEndFASTQ path));
     [ "-p"; "--paired-end" ],
       Some "<fastq_file_name1> <fastq_file_name2> <label>",
       [ "process the sequences contained in the specified FASTQ input file";
@@ -243,10 +244,10 @@ let () =
         "contents are expected to be homogeneous across inputs" ],
       TA.Optional,
       (fun _ ->
+        let label = TA.get_parameter () in
         let path1 = TA.get_parameter () in
         let path2 = TA.get_parameter () in
-        let label = TA.get_parameter () in
-        Action.compact_add_sequences Parameters.program (PairedEndFASTQ (path1, path2)) label);
+        Action.compact_add_sequences Parameters.program label (PairedEndFASTQ (path1, path2)));
     [ "-t"; "--tabular" ],
       Some "<fasta_file_name> <label>",
       [ "process the sequences contained in the specified tabular input file.";
@@ -259,9 +260,9 @@ let () =
         "contents are expected to be homogeneous across inputs" ],
       TA.Optional,
       (fun _ ->
-        let path = TA.get_parameter () in
         let label = TA.get_parameter () in
-        Action.compact_add_sequences Parameters.program (Files.Reads.Tabular path) label);
+        let path = TA.get_parameter () in
+        Action.compact_add_sequences Parameters.program label (Files.Reads.Tabular path));
     TA.make_separator_multiline [ "Miscellaneous options."; "They are set immediately" ];
     [ "-T"; "--threads" ],
       Some "<computing_threads>",
@@ -336,7 +337,7 @@ let () =
               (fun label ->
                 col_idx := KMerDB.add_empty_column_if_needed db label) in
             Array.iteri
-              (fun file_idx (input, file_label) ->
+              (fun file_idx (file_label, input) ->
                 if !Parameters.verbose then
                   Printf.eprintf "%s\r(%s): Hashed and added %d %s from %d %s%!" String.TermIO.clear __FUNCTION__
                     !spectrum_cntr (String.pluralize_int ~plural:"spectra" "spectrum" !spectrum_cntr)
@@ -393,7 +394,7 @@ let () =
             and it = Iter.empty () |> ref and max_len = ref 1024
             (* Everyone else's variables *)
             and file_cntr = ref 0 and spectrum_cntr = ref 0 and read_label = ref ""
-            and k_mer_iterator, k_mer_finalizer, dump_counts =
+            and k_mer_iterator, dump_counts =
               (* Not for public consumption.
                  The hash set always grows and never gets passed around - we only transmit differences *)
               let old_num_hashes = ref 0 and hashes = ref [||] in
@@ -407,7 +408,7 @@ let () =
                     hashes := hs;
                     IntBAS.push keys row_idx;
                     F32BAS.push vals n) in
-              k_mer_iterator, k_mer_finalizer,
+              k_mer_iterator,
               (fun file_cntr read_label res ->
                 IntBAS.clear keys;
                 F32BAS.clear vals;
@@ -433,7 +434,7 @@ let () =
                   incr file_idx;
                   if !file_idx < num_files then begin
                     (* If we are done with the current file, let's open the next one *)
-                    let input, new_file_label = files.(!file_idx) in
+                    let new_file_label, input = files.(!file_idx) in
                     file_label := new_file_label;
                     (* Note that linting is done automatically at a lower level by KMerIterator
                         depending on the sequence type, so we disable it here *)
