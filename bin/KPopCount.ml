@@ -317,96 +317,207 @@ let () =
           let files = Array.of_rlist files in
           let num_files = Array.length files in
           if !Parameters.threads = 1 then begin
-            let file_cntr = ref 0 and spectrum_cntr = ref 0 and current = -1 |> ref in
-            let k_mer_iterator, k_mer_finalizer =
-              KMI.make ~verbose:!Parameters.verbose !content !hasher
-                (fun hash n -> KMerDB.add_counts_unsafe db !current hash n) in
-            Array.iter
-              (fun (input, label) ->
+            let file_cntr = ref 0 and spectrum_cntr = ref 0 and read_label = ref ""            
+            and k_mer_iterator, k_mer_finalizer, install_label =
+              (* Not for public consumption *)
+              let col_idx = -1 |> ref and hashes_to_rows = ref [||] in
+              let k_mer_iterator, k_mer_finalizer =
+                KMI.make ~verbose:!Parameters.verbose !content !hasher
+                  (fun hashes row_idx n ->
+                    (* We adjust the size of the translation table as needed *)
+                    hashes_to_rows := Array.resize ~is_buffer:true (Array.length hashes) (-1) !hashes_to_rows;
+                    if !hashes_to_rows.(row_idx) = -1 then
+                      (* The row corresponding to the k-mer in the data matrix
+                          has not been allocated yet.
+                        Note that the call only ever happens exactly once per row *)
+                      !hashes_to_rows.(row_idx) <- KMerDB.add_empty_row_if_needed db hashes.(row_idx);
+                    KMerDB.add_counts_unsafe db !col_idx !hashes_to_rows.(row_idx) n) in
+              k_mer_iterator, k_mer_finalizer,
+              (fun label ->
+                col_idx := KMerDB.add_empty_column_if_needed db label) in
+            Array.iteri
+              (fun file_idx (input, file_label) ->
                 if !Parameters.verbose then
                   Printf.eprintf "%s\r(%s): Hashed and added %d %s from %d %s%!" String.TermIO.clear __FUNCTION__
                     !spectrum_cntr (String.pluralize_int ~plural:"spectra" "spectrum" !spectrum_cntr)
                     !file_cntr (String.pluralize_int "file" !file_cntr);
-                incr file_cntr;
+                let new_file_cntr = file_idx + 1 in
                 (* Note that linting is done automatically at a lower level by KMerIterator
                     depending on the sequence type, so we disable it here *)
                 Files.Reads.iter ~linter:Sequences.Lint.none ~verbose:false
-                  (fun (_, segm_id, read) ->
+                  (fun (_, _, read) ->
+                    (* If no global label has been specified, we output one spectrum per sequence *)
+                    let new_read_label =
+                      if file_label = "" then
+                        read.tag
+                      else
+                        file_label in
+                    let is_label_new = new_read_label <> !read_label in
+                    (* Remember that there might be more than one read per file *)
+                    if new_file_cntr > !file_cntr || is_label_new then begin
+                      k_mer_finalizer ();
+                      file_cntr := new_file_cntr;
+                      if is_label_new then begin
+                        (* Remember that installing the label is expensive,
+                            and we want to do it only when necessary *)
+                        install_label new_read_label;
+                        read_label := new_read_label
+                      end
+                    end;
                     let weight =
                       if !weight_field = 0 then
                         1.
                       else
                         CoverageFromName.extract !weight_field read.tag in
                     k_mer_iterator ~weight read.seq;
-                    (* If no global label has been specified, we output one spectrum per sequence *)
-                    if label = "" then begin
-                      current := KMerDB.add_empty_column_if_needed db read.tag;
-                      k_mer_finalizer ();
-                      if segm_id = 0 then
-                        incr spectrum_cntr
+                    let new_spectrum_cntr = !db.core.n_cols in
+                    if new_spectrum_cntr > !spectrum_cntr then begin
+                      spectrum_cntr := new_spectrum_cntr;
+                      if !Parameters.verbose then
+                        Printf.eprintf "%s\r(%s): Hashed and added %d %s from %d %s%!" String.TermIO.clear __FUNCTION__
+                          !spectrum_cntr (String.pluralize_int ~plural:"spectra" "spectrum" !spectrum_cntr)
+                          !file_cntr (String.pluralize_int "file" !file_cntr)
                     end)
                   input;
-                (* If a global label has been specified, we output one spectrum for the whole file *)
-                if label <> "" then begin
-                  current := KMerDB.add_empty_column_if_needed db label;
-                  k_mer_finalizer ();
-                  incr spectrum_cntr
-                end)
+                (* We need to make sure we process all buffers here *)
+                k_mer_finalizer ())
               files
           end else begin
-            (* Here we use C++-style iterators to parallelise over sequences
-                rather than files, which should give a much better granularity *)
+            (* The READER's variables.
+               Here we use C++-style iterators to parallelise over sequences
+                rather than files, which should give a better granularity.
+               We also try to balance load by accumulating reads up to the maximum
+                sequence length seen by the reader so far *)
             let module Iter = Files.Reads.Iterator in
-            let module SA = Tools.StackArray in
-            let file_idx = -1 |> ref and current_label = ref ""
-            and it = Iter.empty () |> ref and hashes = SA.create () |> ref in
-            let k_mer_iterator, k_mer_finalizer =
-              KMI.make ~verbose:!Parameters.verbose !content !hasher
-                (fun hash n -> SA.push !hashes (hash, n)) in
+            let file_idx = -1 |> ref and file_label = ref ""
+            and it = Iter.empty () |> ref and max_len = ref 1024
+            (* Everyone else's variables *)
+            and file_cntr = ref 0 and spectrum_cntr = ref 0 and read_label = ref ""
+            and k_mer_iterator, k_mer_finalizer, dump_counts =
+              (* Not for public consumption.
+                 The hash set always grows and never gets passed around - we only transmit differences *)
+              let old_num_hashes = ref 0 and hashes = ref [||] in
+              (* These are stacks backed by bigarrays so that passing them around is easier *)
+              let module IntBAS = Numbers.IntBAVectorStack in
+              let module F32BAS = Numbers.F32BAVectorStack in
+              let keys = IntBAS.create () and vals = F32BAS.create () in
+              let k_mer_iterator, k_mer_finalizer =
+                KMI.make ~verbose:!Parameters.verbose !content !hasher
+                  (fun hs row_idx n ->
+                    hashes := hs;
+                    IntBAS.push keys row_idx;
+                    F32BAS.push vals n) in
+              k_mer_iterator, k_mer_finalizer,
+              (fun file_cntr read_label res ->
+                IntBAS.clear keys;
+                F32BAS.clear vals;
+                k_mer_finalizer ();
+                (* If there are new hashes, we send them *)
+                let keys = IntBAS.contents keys and vals = F32BAS.contents vals in
+                let num_hashes = Array.length !hashes in
+                if Numbers.IntBAVector.length keys > 0 then
+                  Tools.ArrayStack.push res begin
+                    file_cntr, read_label, !old_num_hashes,
+                    Array.sub !hashes !old_num_hashes (num_hashes - !old_num_hashes),
+                    keys, vals
+                  end;
+                old_num_hashes := num_hashes)
+            and hashes_to_rows_table = IntHashtbl.create !Parameters.threads in
             Processes.Parallel.process_stream_chunkwise
               (fun () ->
                 assert (!file_idx <= num_files);
+                let acc_len = ref 0 and res = ref [] in
                 (* Still some files to process *)
                 while Iter.is_empty !it && !file_idx < num_files do
                   Iter.delete !it;
                   incr file_idx;
                   if !file_idx < num_files then begin
                     (* If we are done with the current file, let's open the next one *)
-                    let input, label = files.(!file_idx) in
-                    current_label := label;
+                    let input, new_file_label = files.(!file_idx) in
+                    file_label := new_file_label;
                     (* Note that linting is done automatically at a lower level by KMerIterator
                         depending on the sequence type, so we disable it here *)
                     it := Iter.create (Sequences.Lint.none ~keep_lowercase:true ~keep_dashes:true, input)
                   end
                 done;
-                if !file_idx = num_files then
-                  raise End_of_file;
-                (* At this point the iterator must be valid *)
-                let res = ref Files.Reads.Read.empty in
-                Iter.get_and_incr !it (fun (_, _, read) -> res := read);
-                !file_idx + 1, !current_label, !res)
-              (fun (file_cntr, label, read) ->
-                hashes := SA.create ();
-                let weight =
-                  if !weight_field = 0 then
-                    1.
-                  else
-                    CoverageFromName.extract !weight_field read.tag in
-                k_mer_iterator ~weight read.seq;
-                k_mer_finalizer ();
-                (* If no global label has been specified, we output one spectrum per sequence *)
-                file_cntr, begin if label = "" then read.tag else label end, !hashes)
-              (fun (file_cntr, label, hashes) ->
-                let spectrum_cntr = !db.core.n_cols in
-                if !Parameters.verbose then
-                  Printf.eprintf "%s\r(%s): Hashed and added %d %s from %d %s%!" String.TermIO.clear __FUNCTION__
-                    spectrum_cntr (String.pluralize_int ~plural:"spectra" "spectrum" spectrum_cntr)
-                    file_cntr (String.pluralize_int "file" file_cntr);
-                  let current = KMerDB.add_empty_column_if_needed db label in
-                  SA.riter
-                    (fun (hash, n) ->
-                      KMerDB.add_counts_unsafe db current hash n)
-                    hashes)
+                if !file_idx < num_files then begin
+                  (* If we got here, the iterator is valid *)
+                  while !acc_len < !max_len && Iter.is_empty !it |> not do
+                    Iter.get_and_incr !it
+                      (fun (_, _, read) ->
+                        let len = String.length read.seq in
+                        max_len := max !max_len len;
+                        Numbers.Int.(acc_len ++ len);
+                        (* If no global label has been specified, we output one spectrum per sequence *)
+                        let label =
+                          if !file_label = "" then
+                            read.tag
+                          else
+                            !file_label in
+                        List.accum res (!file_idx + 1, label, read))
+                  done;
+                  !res
+                end else
+                  raise End_of_file)
+              (fun jobs ->
+                (* Keeping the original order is important here, as the encoding of hashes
+                    is transmitted incrementally *)
+                let res = Tools.ArrayStack.create () in                
+                List.iter
+                  (fun (new_file_cntr, new_label, read) ->
+                    if new_file_cntr > !file_cntr || new_label <> !read_label then begin
+                      dump_counts !file_cntr !read_label res;
+                      file_cntr := new_file_cntr;
+                      read_label := new_label
+                    end;
+                    let weight =
+                      if !weight_field = 0 then
+                        1.
+                      else
+                        CoverageFromName.extract !weight_field read.Files.Base.Read.tag in
+                    k_mer_iterator ~weight read.seq)
+                  jobs;
+                dump_counts !file_cntr !read_label res;
+                Unix.getpid (), Tools.ArrayStack.contents res)
+              (fun (pid, res) ->
+                Array.iter
+                  (fun (new_file_cntr, label, old_num_hashes, new_hashes, keys, vals) ->
+                    file_cntr := max !file_cntr new_file_cntr;
+                    (* We update the hashes for the worker process that sent the result *)
+                    let hashes_to_rows =
+                      match IntHashtbl.find_opt hashes_to_rows_table pid with
+                      | Some hashes_to_rows ->
+                        hashes_to_rows
+                      | None ->
+                        let res = ref [||] in
+                        IntHashtbl.add hashes_to_rows_table pid res;
+                        res in
+                    let num_new_hashes = Array.length new_hashes in
+                    (* We resize the vector to the size provided by the subprocess *)
+                    hashes_to_rows :=
+                      Array.resize ~is_buffer:true (old_num_hashes + num_new_hashes) (-1) !hashes_to_rows;
+                    Array.iteri
+                      (fun i hash ->
+                        let i = old_num_hashes + i in
+                        if !hashes_to_rows.(i) = -1 then
+                          !hashes_to_rows.(i) <- KMerDB.add_empty_row_if_needed db hash)
+                      new_hashes;
+                    (* Which spectrum are we updating? *)
+                    let new_spectrum_cntr = !db.core.n_cols in
+                    if !Parameters.verbose && new_spectrum_cntr > !spectrum_cntr then begin
+                      Printf.eprintf "%s\r(%s): Hashed and added %d %s from %d %s%!" String.TermIO.clear __FUNCTION__
+                        new_spectrum_cntr (String.pluralize_int ~plural:"spectra" "spectrum" new_spectrum_cntr)
+                        !file_cntr (String.pluralize_int "file" !file_cntr);
+                      spectrum_cntr := new_spectrum_cntr
+                    end;
+                    let col_idx = KMerDB.add_empty_column_if_needed db label in
+                    (* We iterate on the list of k-mers *)
+                    assert (Numbers.IBAVector.length keys = Numbers.F32BAVector.length vals);
+                    Numbers.IntBAVector.iteri
+                      (fun i key ->
+                        KMerDB.add_counts_unsafe db col_idx !hashes_to_rows.(key) Numbers.F32BAVector.(vals.@(i)))
+                      keys)
+                  res)
               !Parameters.threads;
           end;
           if !Parameters.verbose then
