@@ -123,7 +123,8 @@ conditional_echo "$(date +"%c"): [15/16] Encoding twister..."
 KPopTwistDB -T "$THREADS" -I T "$PREFIX_OUT" -o T "$PREFIX_OUT" > "${TMPDIR}/LOGGO.txt" 2>&1
 conditional_echo "$(date +"%c"): [16/16] Cleaning up..."
 if [[ "$TEMPORARIES" == "false" ]]; then
-  rm "${TMPDIR}/TABLE.KPopKMatrix.txt" "${TMPDIR}/TABLE.KPopMMatrix.txt" "${TMPDIR}/LOGGO.txt"
+  rm -f "${TMPDIR}/TABLE.KPopKMatrix.txt" "${TMPDIR}/TABLE.KPopMMatrix.txt"
+  rm "${TMPDIR}/LOGGO.txt"
   rmdir "${TMPDIR}"
   rm "${PREFIX_OUT}.KPopTwisted.txt" "${PREFIX_OUT}.KPopInertia.txt" "${PREFIX_OUT}.KPopTwister.txt"
   if [[ "$PREFIX_OUT_KMERS" != "" ]]; then
