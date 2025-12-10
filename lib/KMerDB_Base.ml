@@ -94,7 +94,7 @@ include (
       meta_names_to_idx: int StringHashtbl.t
     }
     (* *)
-    let make_empty () = {
+    let empty () = {
       core = {
         n_cols = 0;
         n_rows = 0;
@@ -217,6 +217,12 @@ include (
       let col_idx = add_empty_column_if_needed db label
       and meta_idx = add_empty_meta_if_needed db meta in
       !db.core.meta.(col_idx).(meta_idx) <- s
+    let set_metadata_unsafe db col_idx meta_idx s =
+      (*if col_idx < 0 || col_idx >= !db.core.n_cols then
+        Exception.raise_index_out_of_range __FUNCTION__ col_idx "column set" !db.core.n_cols;
+      if meta_idx < 0 || meta_idx >= !db.core.n_meta then
+        Exception.raise_index_out_of_range __FUNCTION__ meta_idx "metadata field set" !db.core.n_meta;*)
+      !db.core.meta.(col_idx).(meta_idx) <- s
     let add_counts db label hash counts =
       let col_idx = add_empty_column_if_needed db label
       and row_idx = add_empty_row_if_needed db hash in
@@ -272,40 +278,160 @@ include (
           String.TermIO.clear __FUNCTION__ !col_num n_cols
             (String.pluralize_int ~plural:"spectra" "spectrum" !col_num);
       !db
-    let merge ?(verbose = false) db1 db2 =
-      let lines1 = db1.core.n_rows + db1.core.n_meta
-      and lines2 = db2.core.n_rows + db2.core.n_meta in
-      let area1 = db1.core.n_cols * lines1
-      and area2 = db2.core.n_cols * lines2 in
-      let base, suppl, lines =
-        if area1 > area2 then
-          ref db1, db2, lines2
+    (* Implementation functions *)
+    let merge_verbose_output_iter __FUNCTION__ n_cols n_lines col_num line_num =
+      if line_num < 500 || line_num mod 500 = 0 then begin
+        Printf.eprintf "%s\r(%s): Merged %d/%d %s and %d/%d %s%!" String.TermIO.clear __FUNCTION__
+          col_num n_cols (String.pluralize_int ~plural:"spectra" "spectrum" col_num)
+          line_num n_lines (String.pluralize_int "row" line_num)
+      end
+      [@@inline]
+    and merge_verbose_output_summary __FUNCTION__ n_cols =
+      Printf.eprintf "%s\r(%s): Merged %d/%d %s.\n%!" String.TermIO.clear __FUNCTION__
+        n_cols n_cols (String.pluralize_int ~plural:"spectra" "spectrum" n_cols)
+      [@@inline]
+    let union_and_merge ?(verbose = false) db1 db2 =
+      (* By "line" we mean a metadata or k-mer row here.
+         The result will have the union of matadata and k-mer labels,
+          and merged columns.
+         We take as starting point the database with the largest area *)
+      let base, suppl =
+        if begin
+          db1.core.n_cols * (db1.core.n_rows + db1.core.n_meta) >
+          db2.core.n_cols * (db2.core.n_rows + db2.core.n_meta)
+        end then
+          db1, db2
         else
-          ref db2, db1, lines1
-      and line_num = ref 0 in
-      for i = 0 to suppl.core.n_cols - 1 do
+          db2, db1 in
+      let res = ref base and n_cols = suppl.core.n_cols and n_lines = suppl.core.n_rows + suppl.core.n_meta in
+      (* We determine index mappings for k-mer and metadata field labels *)
+      let row_idx_mapper = Tools.ArrayStack.empty () and meta_idx_mapper = Tools.ArrayStack.empty () in
+      for suppl_row_idx = 0 to suppl.core.n_rows - 1 do
+        let label = suppl.core.idx_to_row_names.(suppl_row_idx) in
+        (suppl_row_idx, add_empty_row_if_needed res label) |> Tools.ArrayStack.push row_idx_mapper
+      done;
+      for suppl_meta_idx = 0 to suppl.core.n_meta - 1 do
+        let label = suppl.core.idx_to_meta_names.(suppl_meta_idx) in
+        (suppl_meta_idx, add_empty_meta_if_needed res label) |> Tools.ArrayStack.push meta_idx_mapper
+      done;
+      (* We add the columns from suppl *)
+      for suppl_col_idx = 0 to suppl.core.n_cols - 1 do
         (* The names of the spectra to be added must not be already present *)
-        let label = suppl.core.idx_to_col_names.(i) in
-        if StringHashtbl.mem !base.col_names_to_idx label then
+        let label = suppl.core.idx_to_col_names.(suppl_col_idx) in
+        if StringHashtbl.mem !res.col_names_to_idx label then
           Exception.raise __FUNCTION__ IO_Format
             (Printf.sprintf "Spectrum '%s' is already present in the target database" label);
+        let res_col_idx = add_empty_column_if_needed res label and line_num = ref 0 in
         (* We add the counts associated with the sample *)
-        for j = 0 to suppl.core.n_rows - 1 do
-          add_counts base label suppl.core.idx_to_row_names.(j) CountBAVector.(suppl.core.data.(i).@(j))
-        done;
+        Tools.ArrayStack.riter (* The order of iteration is immaterial here *)
+          (fun (suppl_row_idx, res_row_idx) ->
+            add_counts_unsafe res res_col_idx res_row_idx
+              CountBAVector.(suppl.core.data.(suppl_col_idx).@(suppl_row_idx));
+            if verbose then begin
+              incr line_num;
+              merge_verbose_output_iter __FUNCTION__ n_cols n_lines suppl_col_idx !line_num
+            end)
+          row_idx_mapper;
         (* We add the metadata associated with the sample *)
-        for j = 0 to suppl.core.n_meta - 1 do
-          set_metadata base label suppl.core.idx_to_meta_names.(j) suppl.core.meta.(i).(j)
-        done;
-        if verbose && !line_num mod 25 = 0 then
-          Printf.eprintf "%s\r(%s): Merged %d/%d %s%!"
-            String.TermIO.clear __FUNCTION__ !line_num lines (String.pluralize_int "line" !line_num);
-        incr line_num
+        Tools.ArrayStack.riter (* The order of iteration is immaterial here *)
+          (fun (suppl_meta_idx, res_meta_idx) ->
+            set_metadata_unsafe res res_col_idx res_meta_idx
+              suppl.core.meta.(suppl_col_idx).(suppl_meta_idx);
+            if verbose then begin
+              incr line_num;
+              merge_verbose_output_iter __FUNCTION__ n_cols n_lines suppl_col_idx !line_num
+            end)
+          meta_idx_mapper
       done;
       if verbose then
-        Printf.eprintf "%s\r(%s): Merged %d/%d %s.\n%!"
-          String.TermIO.clear __FUNCTION__ !line_num lines (String.pluralize_int "line" !line_num);
-      !base
+        merge_verbose_output_summary __FUNCTION__ n_cols;
+      !res
+    let intersect_and_merge ?(verbose = false) db1 db2 =
+      (* By "line" we mean a metadata or k-mer row here.
+         The result will have the union of metadata and k-mer labels,
+          and merged columns.
+         We take as starting point to compute label intersections the database
+          with the most columns, but as for the result we start with an empty one *)
+      let base, suppl =
+        begin if db1.core.n_cols > db2.core.n_cols then
+          db1, db2
+        else
+          db2, db1
+        end
+      and res = empty () |> ref
+      (* We determine index mappings for k-mer and metadata field labels *)
+      and row_idx_mapper = Tools.ArrayStack.empty () and meta_idx_mapper = Tools.ArrayStack.empty () in
+      for base_row_idx = 0 to base.core.n_rows - 1 do
+        let label = base.core.idx_to_row_names.(base_row_idx) in
+        match StringHashtbl.find_opt suppl.row_names_to_idx label with
+        | None -> ()
+        | Some suppl_row_idx ->
+          (base_row_idx, suppl_row_idx, add_empty_row_if_needed res label) |> Tools.ArrayStack.push row_idx_mapper
+      done;
+      for base_meta_idx = 0 to base.core.n_meta - 1 do
+        let label = base.core.idx_to_meta_names.(base_meta_idx) in
+        match StringHashtbl.find_opt suppl.meta_names_to_idx label with
+        | None -> ()
+        | Some suppl_meta_idx ->
+          (base_meta_idx, suppl_meta_idx, add_empty_meta_if_needed res label) |> Tools.ArrayStack.push meta_idx_mapper
+      done;
+      let n_cols = base.core.n_cols + suppl.core.n_cols and col_num = ref 0
+      and n_lines = !res.core.n_rows + !res.core.n_meta in
+      (* We add the columns from base *)
+      for base_col_idx = 0 to base.core.n_cols - 1 do
+        let res_col_idx = add_empty_column_if_needed res base.core.idx_to_col_names.(base_col_idx)
+        and line_num = ref 0 in
+        Tools.ArrayStack.riter (* The order of iteration is immaterial here *)
+          (fun (base_row_idx, _, res_row_idx) ->
+            add_counts_unsafe res res_col_idx res_row_idx
+              CountBAVector.(base.core.data.(base_col_idx).@(base_row_idx));
+            if verbose then begin
+              incr line_num;
+              merge_verbose_output_iter __FUNCTION__ n_cols n_lines !col_num !line_num
+            end)
+          row_idx_mapper;
+        Tools.ArrayStack.riter (* The order of iteration is immaterial here *)
+          (fun (base_meta_idx, _, res_meta_idx) ->
+            set_metadata_unsafe res res_col_idx res_meta_idx
+              base.core.meta.(base_col_idx).(base_meta_idx);
+            if verbose then begin
+              incr line_num;
+              merge_verbose_output_iter __FUNCTION__ n_cols n_lines !col_num !line_num
+            end)
+          meta_idx_mapper;
+        incr col_num
+      done;
+      (* We add the columns from suppl *)
+      for suppl_col_idx = 0 to suppl.core.n_cols - 1 do
+        (* The names of the spectra to be added must not be already present *)
+        let label = suppl.core.idx_to_col_names.(suppl_col_idx) in
+        if StringHashtbl.mem !res.col_names_to_idx label then
+          Exception.raise __FUNCTION__ IO_Format
+            (Printf.sprintf "Spectrum '%s' is already present in the target database" label);
+        let res_col_idx = add_empty_column_if_needed res label and line_num = ref 0 in
+        Tools.ArrayStack.riter (* The order of iteration is immaterial here *)
+          (fun (_, suppl_row_idx, res_row_idx) ->
+            add_counts_unsafe res res_col_idx res_row_idx
+              CountBAVector.(suppl.core.data.(suppl_col_idx).@(suppl_row_idx));
+            if verbose then begin
+              incr line_num;
+              merge_verbose_output_iter __FUNCTION__ n_cols n_lines !col_num !line_num
+            end)
+          row_idx_mapper;
+        Tools.ArrayStack.riter (* The order of iteration is immaterial here *)
+          (fun (_, suppl_meta_idx, res_meta_idx) ->
+            set_metadata_unsafe res res_col_idx res_meta_idx
+              suppl.core.meta.(suppl_col_idx).(suppl_meta_idx);
+            if verbose then begin
+              incr line_num;
+              merge_verbose_output_iter __FUNCTION__ n_cols n_lines !col_num !line_num
+            end)
+          meta_idx_mapper;
+        incr col_num
+      done;
+      if verbose then
+        merge_verbose_output_summary __FUNCTION__ n_cols;
+      !res
     (* Some basic operations on sample names *)
     let selected_from_regexps ?(verbose = false) db regexps =
       (* We iterate over the columns *)
@@ -373,7 +499,7 @@ include (
       let fname = make_filename_binary prefix in
       let output = open_out fname in
       if verbose then
-        Printf.eprintf "(%s): Outputting DB to file '%s'...%!" __FUNCTION__ fname;
+        Printf.eprintf "(%s): Outputting database to file '%s'...%!" __FUNCTION__ fname;
       output_value output "KPopSpectra";
       output_value output archive_version;
       output_value output {
@@ -392,7 +518,7 @@ include (
       let fname = make_filename_binary prefix in
       let input = open_in fname in
       if verbose then
-        Printf.eprintf "(%s): Reading DB from file '%s'...%!" __FUNCTION__ fname;
+        Printf.eprintf "(%s): Reading database from file '%s'...%!" __FUNCTION__ fname;
       let which = (input_value input: string) in
       let version = (input_value input: string) in
       if which <> "KPopSpectra" then
@@ -435,7 +561,7 @@ include (
       row_names_to_idx: int StringHashtbl.t; (* Hashes *)
       meta_names_to_idx: int StringHashtbl.t (* Metadata fields *)
     }
-    val make_empty: unit -> t
+    val empty: unit -> t
     (* Reconstruct non-core inverted hashes *)
     val of_core: marshalled_t -> t
     (* Make space for a new sample *)
@@ -447,12 +573,20 @@ include (
     (* Replace the entry for the specified sample and metadata label with the given string.
        Allocates space if needed *)
     val set_metadata: t ref -> string -> string -> string -> unit
+    (* Same as above, but providing numerical IDs rather than labels for both sample and metadata field.
+       Does not allocate space *)
+    val set_metadata_unsafe: t ref -> int -> int -> string -> unit
     (* Increase the counts for the specified sample and k-mer by the given amount.
        Allocates space if needed *)
     val add_counts: t ref -> string -> string -> float -> unit
-    (* Same as above, but providing numerical IDs rather than labels for both sample and hash *)
+    (* Same as above, but providing numerical IDs rather than labels for both sample and hash.
+       Does not allocate space *)
     val add_counts_unsafe: t ref -> int -> int -> float -> unit
-    val merge: ?verbose:bool -> t -> t -> t
+    (* Merge two databases after computing the union of k-mer and metdata labels.
+       Missing data is set to zero or the empty string *)
+    val union_and_merge: ?verbose:bool -> t -> t -> t
+    (* Merge two databases after computing the intersection of k-mer and metadata labels *)
+    val intersect_and_merge: ?verbose:bool -> t -> t -> t
     (* Add metadata - the first field must be the label *)
     val add_metadata_file: ?threads:int -> ?bytes_per_step:int -> ?verbose:bool -> t -> string -> t
     (* Select column names identified by regexps on metadata fields *)

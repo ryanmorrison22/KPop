@@ -93,8 +93,8 @@ module Parameters =
 
 let info = {
   Tools.Argv.name = "KPopCount";
-  version = "27";
-  date = "30-Nov-2025"
+  version = "28";
+  date = "08-Dec-2025"
 } and authors = [
   "2017-2025", "Paolo Ribeca", "paolo.ribeca@gmail.com"
 ]
@@ -298,13 +298,13 @@ let () =
   if !Parameters.verbose then
     TA.header ();
   (* These are the registers available to the program *)
-  let db = KMerDB.make_empty () |> ref and content = ref Defaults.content and hasher = ref Defaults.hasher
+  let db = KMerDB.empty () |> ref and content = ref Defaults.content and hasher = ref Defaults.hasher
   and weight_field = ref Defaults.weight_field in
   try
     List.iter
       (function
         | Action.Empty ->
-          db := KMerDB.make_empty ()
+          db := KMerDB.empty ()
         | Of_file prefix ->
           db := KMerDB.of_binary ~verbose:!Parameters.verbose prefix
         | Set_content c ->
@@ -316,7 +316,7 @@ let () =
         | Add_sequences files ->
           (* Files will have been inverted during input compaction *)
           let files = Array.of_rlist files in
-          let num_files = Array.length files in
+          let num_files = Array.length files and num_reads = ref 0 in
           if !Parameters.threads = 1 then begin
             let file_cntr = ref 0 and spectrum_cntr = ref 0 and read_label = ref ""            
             and k_mer_iterator, k_mer_finalizer, install_label =
@@ -338,15 +338,12 @@ let () =
                 col_idx := KMerDB.add_empty_column_if_needed db label) in
             Array.iteri
               (fun file_idx (file_label, input) ->
-                if !Parameters.verbose then
-                  Printf.eprintf "%s\r(%s): Hashed and added %d %s from %d %s%!" String.TermIO.clear __FUNCTION__
-                    !spectrum_cntr (String.pluralize_int ~plural:"spectra" "spectrum" !spectrum_cntr)
-                    !file_cntr (String.pluralize_int "file" !file_cntr);
                 let new_file_cntr = file_idx + 1 in
                 (* Note that linting is done automatically at a lower level by KMerIterator
                     depending on the sequence type, so we disable it here *)
                 Files.Reads.iter ~linter:Sequences.Lint.none ~verbose:false
                   (fun (_, _, read) ->
+                    incr num_reads;
                     (* If no global label has been specified, we output one spectrum per sequence *)
                     let new_read_label =
                       if file_label = "" then
@@ -357,7 +354,6 @@ let () =
                     (* Remember that there might be more than one read per file *)
                     if new_file_cntr > !file_cntr || is_label_new then begin
                       k_mer_finalizer ();
-                      file_cntr := new_file_cntr;
                       if is_label_new then begin
                         (* Remember that installing the label is expensive,
                             and we want to do it only when necessary *)
@@ -372,13 +368,17 @@ let () =
                         CoverageFromName.extract !weight_field read.tag in
                     k_mer_iterator ~weight read.seq;
                     let new_spectrum_cntr = !db.core.n_cols in
-                    if new_spectrum_cntr > !spectrum_cntr then begin
-                      spectrum_cntr := new_spectrum_cntr;
-                      if !Parameters.verbose then
-                        Printf.eprintf "%s\r(%s): Hashed and added %d %s from %d %s%!" String.TermIO.clear __FUNCTION__
-                          !spectrum_cntr (String.pluralize_int ~plural:"spectra" "spectrum" !spectrum_cntr)
-                          !file_cntr (String.pluralize_int "file" !file_cntr)
-                    end)
+                    if !Parameters.verbose && begin
+                      new_file_cntr > !file_cntr || new_spectrum_cntr > !spectrum_cntr ||
+                      !num_reads < 25 || !num_reads mod 25 = 0
+                    end then
+                      Printf.eprintf "%s\r(%s): Hashed and added %d %s from %d %s and %d %s%!"
+                        String.TermIO.clear __FUNCTION__
+                        !spectrum_cntr (String.pluralize_int ~plural:"spectra" "spectrum" !spectrum_cntr)
+                        !num_reads (String.pluralize_int "read" !num_reads)
+                        (new_file_cntr - 1) (String.pluralize_int "file" (new_file_cntr - 1));
+                    file_cntr := new_file_cntr;
+                    spectrum_cntr := new_spectrum_cntr)
                   input;
                 (* We need to make sure we process all buffers here *)
                 k_mer_finalizer ())
@@ -391,7 +391,7 @@ let () =
                 sequence length seen by the reader so far *)
             let module Iter = Files.Reads.Iterator in
             let file_idx = -1 |> ref and file_label = ref ""
-            and it = Iter.empty () |> ref and max_len = ref 1024
+            and it = Iter.empty () |> ref and max_len = ref 8192
             (* Everyone else's variables *)
             and file_cntr = ref 0 and spectrum_cntr = ref 0 and read_label = ref ""
             and k_mer_iterator, dump_counts =
@@ -401,7 +401,7 @@ let () =
               (* These are stacks backed by bigarrays so that passing them around is easier *)
               let module IntBAS = Numbers.IntBAVectorStack in
               let module F32BAS = Numbers.F32BAVectorStack in
-              let keys = IntBAS.create () and vals = F32BAS.create () in
+              let keys = IntBAS.empty () and vals = F32BAS.empty () in
               let k_mer_iterator, k_mer_finalizer =
                 KMI.make ~verbose:!Parameters.verbose !content !hasher
                   (fun hs row_idx n ->
@@ -463,7 +463,7 @@ let () =
               (fun jobs ->
                 (* Keeping the original order is important here, as the encoding of hashes
                     is transmitted incrementally *)
-                let res = Tools.ArrayStack.create () in                
+                let num_reads = ref 0 and res = Tools.ArrayStack.empty () in                
                 List.iter
                   (fun (new_file_cntr, new_label, read) ->
                     if new_file_cntr > !file_cntr || new_label <> !read_label then begin
@@ -476,14 +476,16 @@ let () =
                         1.
                       else
                         CoverageFromName.extract !weight_field read.Files.Base.Read.tag in
-                    k_mer_iterator ~weight read.seq)
+                    k_mer_iterator ~weight read.seq;
+                    incr num_reads)
                   jobs;
                 dump_counts !file_cntr !read_label res;
-                Unix.getpid (), Tools.ArrayStack.contents res)
-              (fun (pid, res) ->
+                Unix.getpid (), !num_reads, Tools.ArrayStack.contents res)
+              (fun (pid, n_reads, res) ->
                 Array.iter
                   (fun (new_file_cntr, label, old_num_hashes, new_hashes, keys, vals) ->
                     file_cntr := max !file_cntr new_file_cntr;
+                    Numbers.Int.(num_reads ++ n_reads);
                     (* We update the hashes for the worker process that sent the result *)
                     let hashes_to_rows =
                       match IntHashtbl.find_opt hashes_to_rows_table pid with
@@ -505,12 +507,15 @@ let () =
                       new_hashes;
                     (* Which spectrum are we updating? *)
                     let new_spectrum_cntr = !db.core.n_cols in
-                    if !Parameters.verbose && new_spectrum_cntr > !spectrum_cntr then begin
-                      Printf.eprintf "%s\r(%s): Hashed and added %d %s from %d %s%!" String.TermIO.clear __FUNCTION__
+                    if !Parameters.verbose && begin
+                      new_spectrum_cntr > !spectrum_cntr || !num_reads < 25 || !num_reads mod 25 = 0
+                    end then
+                      Printf.eprintf "%s\r(%s): Hashed and added %d %s from %d %s and %d %s%!"
+                        String.TermIO.clear __FUNCTION__
                         new_spectrum_cntr (String.pluralize_int ~plural:"spectra" "spectrum" new_spectrum_cntr)
-                        !file_cntr (String.pluralize_int "file" !file_cntr);
-                      spectrum_cntr := new_spectrum_cntr
-                    end;
+                        !num_reads (String.pluralize_int "read" !num_reads)
+                        (!file_cntr - 1) (String.pluralize_int "file" (!file_cntr - 1));
+                    spectrum_cntr := new_spectrum_cntr;
                     let col_idx = KMerDB.add_empty_column_if_needed db label in
                     (* We iterate on the list of k-mers *)
                     assert (Numbers.IBAVector.length keys = Numbers.F32BAVector.length vals);
@@ -523,8 +528,10 @@ let () =
           end;
           if !Parameters.verbose then
             let spectrum_cntr = !db.core.n_cols in
-            Printf.eprintf "%s\r(%s): Hashed and added %d %s from %d %s.\n%!" String.TermIO.clear __FUNCTION__
+            Printf.eprintf "%s\r(%s): Hashed and added %d %s from %d %s and %d %s.\n%!"
+              String.TermIO.clear __FUNCTION__
               spectrum_cntr (String.pluralize_int ~plural:"spectra" "spectrum" spectrum_cntr)
+              !num_reads (String.pluralize_int "read" !num_reads)
               num_files (String.pluralize_int "file" num_files)
         | To_file prefix ->
           Exception.catch_unexpected_end_of_output __FUNCTION__

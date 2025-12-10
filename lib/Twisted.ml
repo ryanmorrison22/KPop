@@ -571,7 +571,7 @@ include (
         let n = Array.length m.matrix.row_names in
         let cols_per_step = max 1 (elements_per_step / n) and processed_cols = ref 0
         and d = Array.length m.matrix.col_names in
-        let row_permutations = Array.make d [||] and gaps = Tools.ArrayStack.create () in
+        let row_permutations = Array.make d [||] and gaps = Tools.ArrayStack.empty () in
         (* Generate points to be computed by the parallel process *)
         Processes.Parallel.process_stream_chunkwise
           (fun () ->
