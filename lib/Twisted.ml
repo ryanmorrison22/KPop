@@ -41,7 +41,8 @@ module NeighborsPolicy:
       | Additional n -> "plus(" ^ string_of_int n ^ ")"
     let of_string_re = Str.regexp "[()]"
     let of_string s =
-      let fail kind = Printf.sprintf "(%s): %s policy '%s'" __FUNCTION__ kind s |> failwith in
+      let fail kind =
+        Exception.raise __FUNCTION__ Initialize (Printf.sprintf "%s policy '%s'" kind s) in
       match Str.full_split of_string_re s with
       | [ Text "times"; Delim "("; Text mult; Delim ")" ] ->
         let mult =

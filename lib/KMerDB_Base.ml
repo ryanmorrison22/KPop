@@ -290,9 +290,64 @@ include (
       Printf.eprintf "%s\r(%s): Merged %d/%d %s.\n%!" String.TermIO.clear __FUNCTION__
         n_cols n_cols (String.pluralize_int ~plural:"spectra" "spectrum" n_cols)
       [@@inline]
+    let template_and_merge ?(verbose = false) db1 db2 =
+      (* By "line" we mean a metadata or k-mer row here.
+         The result will have the same metadata and k-mer labels as db1,
+          and merged columns.
+         We take as starting point db1 *)
+      let base, suppl = db1, db2 in
+      let res = ref base and n_cols = suppl.core.n_cols and n_lines = suppl.core.n_rows + suppl.core.n_meta in
+      (* We determine index mappings for k-mer and metadata field labels *)
+      let row_idx_mapper = Tools.ArrayStack.empty () and meta_idx_mapper = Tools.ArrayStack.empty () in
+      for suppl_row_idx = 0 to suppl.core.n_rows - 1 do
+        let label = suppl.core.idx_to_row_names.(suppl_row_idx) in
+        match StringHashtbl.find_opt base.row_names_to_idx label with
+        | None -> ()
+        | Some base_row_idx ->
+          (base_row_idx, suppl_row_idx) |> Tools.ArrayStack.push row_idx_mapper
+      done;
+      for suppl_meta_idx = 0 to suppl.core.n_meta - 1 do
+        let label = suppl.core.idx_to_meta_names.(suppl_meta_idx) in
+        match StringHashtbl.find_opt base.meta_names_to_idx label with
+        | None -> ()
+        | Some base_meta_idx ->
+          (base_meta_idx, suppl_meta_idx) |> Tools.ArrayStack.push meta_idx_mapper
+      done;
+      (* We add the columns from suppl *)
+      for suppl_col_idx = 0 to suppl.core.n_cols - 1 do
+        (* The names of the spectra to be added must not be already present *)
+        let label = suppl.core.idx_to_col_names.(suppl_col_idx) in
+        if StringHashtbl.mem !res.col_names_to_idx label then
+          Exception.raise __FUNCTION__ IO_Format
+            (Printf.sprintf "Spectrum '%s' is already present in the target database" label);
+        let res_col_idx = add_empty_column_if_needed res label and line_num = ref 0 in
+        (* We add the counts associated with the sample *)
+        Tools.ArrayStack.riter (* The order of iteration is immaterial here *)
+          (fun (base_row_idx, suppl_row_idx) ->
+            add_counts_unsafe res res_col_idx base_row_idx
+              CountBAVector.(suppl.core.data.(suppl_col_idx).@(suppl_row_idx));
+            if verbose then begin
+              incr line_num;
+              merge_verbose_output_iter __FUNCTION__ n_cols n_lines suppl_col_idx !line_num
+            end)
+          row_idx_mapper;
+        (* We add the metadata associated with the sample *)
+        Tools.ArrayStack.riter (* The order of iteration is immaterial here *)
+          (fun (base_meta_idx, suppl_meta_idx) ->
+            set_metadata_unsafe res res_col_idx base_meta_idx
+              suppl.core.meta.(suppl_col_idx).(suppl_meta_idx);
+            if verbose then begin
+              incr line_num;
+              merge_verbose_output_iter __FUNCTION__ n_cols n_lines suppl_col_idx !line_num
+            end)
+          meta_idx_mapper
+      done;
+      if verbose then
+        merge_verbose_output_summary __FUNCTION__ n_cols;
+      !res
     let union_and_merge ?(verbose = false) db1 db2 =
       (* By "line" we mean a metadata or k-mer row here.
-         The result will have the union of matadata and k-mer labels,
+         The result will have the union of metadata and k-mer labels,
           and merged columns.
          We take as starting point the database with the largest area *)
       let base, suppl =
@@ -432,6 +487,32 @@ include (
       if verbose then
         merge_verbose_output_summary __FUNCTION__ n_cols;
       !res
+    module MergeCriterion =
+      struct
+        type t =
+          | First
+          | Second
+          | Union
+          | Intersect
+        let of_string = function
+          | "first" -> First
+          | "second" -> Second
+          | "union" -> Union
+          | "intersect" | "intersection" -> Intersect
+          | s ->
+            Exception.raise_unrecognized_initializer __FUNCTION__ "merge strategy" s
+        let to_string = function
+          | First -> "first"
+          | Second -> "second"
+          | Union -> "union"
+          | Intersect -> "intersect"
+      end
+    let merge ?(verbose = false) kind db1 db2 =
+      match kind with
+      | MergeCriterion.First -> template_and_merge ~verbose db1 db2
+      | Second -> template_and_merge ~verbose db2 db1
+      | Union -> union_and_merge ~verbose db1 db2
+      | Intersect -> intersect_and_merge ~verbose db1 db2
     (* Some basic operations on sample names *)
     let selected_from_regexps ?(verbose = false) db regexps =
       (* We iterate over the columns *)
@@ -587,6 +668,20 @@ include (
     val union_and_merge: ?verbose:bool -> t -> t -> t
     (* Merge two databases after computing the intersection of k-mer and metadata labels *)
     val intersect_and_merge: ?verbose:bool -> t -> t -> t
+    (* Merge two databases only keeping the k-mer and metadata labels present in the first one *)
+    val template_and_merge: ?verbose:bool -> t -> t -> t
+    module MergeCriterion:
+      sig
+        type t =
+          | First
+          | Second
+          | Union
+          | Intersect
+        val of_string: string -> t
+        val to_string: t -> string
+      end
+    (* Generalised merge function suitably combining the ones above *)
+    val merge: ?verbose:bool -> MergeCriterion.t -> t -> t -> t
     (* Add metadata - the first field must be the label *)
     val add_metadata_file: ?threads:int -> ?bytes_per_step:int -> ?verbose:bool -> t -> string -> t
     (* Select column names identified by regexps on metadata fields *)

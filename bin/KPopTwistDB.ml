@@ -26,7 +26,7 @@ module RegisterType =
       | "T" -> Twister
       | "t" -> Twisted
       | s ->
-        Printf.sprintf "(%s): Invalid register type '%s'" __FUNCTION__ s |> failwith
+        Exception.raise_unrecognized_initializer __FUNCTION__ "register type" s
   end
 
 module KeepAtMost =

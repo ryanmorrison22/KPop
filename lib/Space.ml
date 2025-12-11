@@ -187,7 +187,8 @@ module Distance:
         end
     let of_string_re = Str.regexp "[()]"
     let of_string s =
-      let fail kind = Printf.sprintf "(%s): %s distance '%s'" __FUNCTION__ kind s |> failwith in
+      let fail kind =
+        Exception.raise __FUNCTION__ Initialize (Printf.sprintf "%s distance '%s'" kind s) in
       match Str.full_split of_string_re s with
       | [ Text "euclidean" ] ->
         Euclidean

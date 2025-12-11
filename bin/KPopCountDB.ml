@@ -21,10 +21,10 @@ type to_do_t =
   | Empty
   | Of_binary of string
   | Of_tables of string
-  | Union_and_merge_binary of string
-  | Intersect_and_merge_binary of string
+  | Set_merge_criterion of KMerDB.MergeCriterion.t
+  | Merge_binary of string
   | Add_metadata of string
-  | Combination_criterion_set of KMerDB.CombinationCriterion.t
+  | Set_combination_criterion of KMerDB.CombinationCriterion.t
   | Split_spectra of string
   | Add_combined_selected of string (* The new label *)
   | Remove_selected
@@ -47,6 +47,7 @@ and regexps_t = (string * Str.regexp) list
 
 module Defaults =
   struct
+    let merge_criterion = KMerDB.MergeCriterion.of_string "union"
     let combination_criterion = KMerDB.CombinationCriterion.of_string "mean"
     let transformation = KMerDB.Transformation.of_string "power(1)"
     let output_zero_kmers = true
@@ -66,8 +67,8 @@ module Parameters =
 
 let info = {
   Tools.Argv.name = "KPopCountDB";
-  version = "54";
-  date = "09-Dec-2025"
+  version = "55";
+  date = "10-Dec-2025"
 } and authors = [
   "2020-2025", "Paolo Ribeca", "paolo.ribeca@gmail.com"
 ]
@@ -109,26 +110,35 @@ let () =
         "  unless file is '/dev/*')" ],
       TA.Optional,
       (fun _ -> Of_tables (TA.get_parameter ()) |> List.accum Parameters.program);
-    [ "-a"; "--add"; "--union-and-add" ],
+    [ "--addition-criterion"; "--database-addition-criterion" ],
+      Some "'first'|'second'|'union'|'intersect'",
+      [ "set the criterion used to combine databases of spectra.";
+        "Possibilities are:";
+        " 'first'";
+        "  The resulting database will have the same k-mer and metadata labels";
+        "  as the first database";
+        " 'second'";
+        "  The resulting database will have the same k-mer and metadata labels";
+        "  as the second database";
+        " 'union'";
+        "  The resulting database will have as k-mer and metadata labels the";
+        "  union of the k-mer and metadata labels of the two databases";
+        " 'intersect'";
+        "  The resulting database will have as k-mer and metadata labels the";
+        "  intersection of the k-mer and metadata labels of the two databases.";
+        "For criteria 'first', 'second', and 'union', missing data will be set";
+        "to zero in the case of k-mer counts, and to the empty string in the case";
+        "of metadata entries" ],
+      TA.Default (KMerDB.MergeCriterion.to_string Defaults.merge_criterion |> Fun.const),
+      (fun _ ->
+        Set_merge_criterion (TA.get_parameter () |> KMerDB.MergeCriterion.of_string)
+          |> List.accum Parameters.program);
+    [ "-a"; "--add"; "--add-database" ],
       Some "<binary_file_prefix>",
-      [ "add to the register the contents of the database present in the specified";
-        "binary file";
-        " (which must have extension '.KPopSpectra' unless file is '/dev/*').";
-        "The resulting database will have as k-mer and metadata labels the union";
-        "of the k-mer and metadata labels of the two databases.";
-        "Missing data will be set to zero in the case of k-mer counts,";
-        "and to the empty string in the case of metadata entries" ],
+      [ "add to the register the database present in the specified binary file";
+        " (which must have extension '.KPopSpectra' unless file is '/dev/*')" ],
       TA.Optional,
-      (fun _ -> Union_and_merge_binary (TA.get_parameter ()) |> List.accum Parameters.program);
-    [ "--intersect-and-add" ],
-      Some "<binary_file_prefix>",
-      [ "add to the register the contents of the database present in the specified";
-        "binary file";
-        " (which must have extension '.KPopSpectra' unless file is '/dev/*').";
-        "The resulting database will have as k-mer and metadata labels the intersection";
-        "of the k-mer and metadata labels of the two databases" ],
-      TA.Optional,
-      (fun _ -> Intersect_and_merge_binary (TA.get_parameter ()) |> List.accum Parameters.program);
+      (fun _ -> Merge_binary (TA.get_parameter ()) |> List.accum Parameters.program);
     [ "-m"; "--metadata"; "--add-metadata" ],
       Some "<metadata_table_file_name>",
       [ "add to the register metadata from the specified tabular file.";
@@ -178,7 +188,7 @@ let () =
         "  'median' computes the median across spectra)" ],
       TA.Default (KMerDB.CombinationCriterion.to_string Defaults.combination_criterion |> Fun.const),
       (fun _ ->
-        Combination_criterion_set (TA.get_parameter () |> KMerDB.CombinationCriterion.of_string)
+        Set_combination_criterion (TA.get_parameter () |> KMerDB.CombinationCriterion.of_string)
           |> List.accum Parameters.program);
     [ "-c"; "--combine"; "--combine-by-class"; "--combine-spectra-by-class" ],
       Some "<classes_metadata_field_name>",
@@ -332,7 +342,7 @@ let () =
     TA.header ();
   (* These are the registers available to the program *)
   let current = KMerDB.empty () |> ref and selected = ref StringSet.empty
-  and combination_criterion = ref Defaults.combination_criterion
+  and merge_criterion = ref Defaults.merge_criterion and combination_criterion = ref Defaults.combination_criterion
   and output_zero_kmers = ref Defaults.output_zero_kmers and precision = ref Defaults.precision
   and distance = ref Defaults.distance and distance_normalise = ref Defaults.distance_normalise in
   try
@@ -344,17 +354,15 @@ let () =
           current := KMerDB.of_binary ~verbose:!Parameters.verbose prefix
         | Of_tables prefix ->
           current := KMerDB.of_files ~threads:!Parameters.threads ~verbose:!Parameters.verbose prefix
-        | Union_and_merge_binary prefix ->
+        | Set_merge_criterion criterion ->
+          merge_criterion := criterion
+        | Merge_binary prefix ->
           current :=
             KMerDB.of_binary ~verbose:!Parameters.verbose prefix |>
-            KMerDB.union_and_merge ~verbose:!Parameters.verbose !current
-        | Intersect_and_merge_binary prefix ->
-          current :=
-            KMerDB.of_binary ~verbose:!Parameters.verbose prefix |>
-            KMerDB.intersect_and_merge ~verbose:!Parameters.verbose !current
+            KMerDB.merge ~verbose:!Parameters.verbose !merge_criterion !current
         | Add_metadata path ->
           current := KMerDB.add_metadata_file ~threads:!Parameters.threads ~verbose:!Parameters.verbose !current path
-        | Combination_criterion_set criterion ->
+        | Set_combination_criterion criterion ->
           combination_criterion := criterion
         | Split_spectra classes_label ->
           current :=
