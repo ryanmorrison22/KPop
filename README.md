@@ -65,7 +65,7 @@ Alternatively, you can install `KPop` manually by cloning and compiling its sour
 ```bash
 opam install dune
 ```
-if it is not already present. Make sure that you install OCaml version 4.12 or later.
+if it is not already present. Make sure that you install OCaml version 4.12 or later. Note that, although we don't expect major issues, we have never tested if the code compiles successfully with version 5 or above.
 
 Cloning should be done with the option --recursive, as in
 ```bash
@@ -80,7 +80,7 @@ Then go to the directory into which you have downloaded the latest `KPop` source
 
 That should generate all the executables you'll need (as of this writing, `KPopCount`, `KPopCounterDB`, `KPopTwist_`, `KPopTwist`, `KPopTwistDB`) in the directory `./build`. Copy them to some favourite location in your PATH, for instance `~/.local/bin`.
 
-For the time being, due to the presence of some legacy code, you'll also need to install some R packages (and possibly R itself) by using your favourite R package manager. Those packages are:
+For the time being, due to the presence of some legacy code, you'll also need to install some R packages (and possibly R itself if you don't already have it) by using your favourite R package manager. Those packages are:
 ```
 data.table
 ca
@@ -88,59 +88,73 @@ ca
 
 ## 1. Quick start
 
-Download file `clusters-small.fasta` from the directory `test`. Then run the following commands (throughout this documentation we'll assume that you're using a fairly up-to-date version of `bash`):
+Download the directory `Primer` from the directory `test` in the repository. Then run the following commands (throughout this documentation we'll assume that you're using a fairly up-to-date version of `bash`):
 
 ```bash
 export K=5
 date
-for CLASS in C1 C2 C3 C4 C5 C6 C7 C8 C9 C10; do cat clusters-small.fasta | awk -v CLASS=$CLASS '{nr=(NR-1)%4; ok=(nr==0?$0~("-"CLASS"$"):nr==1&&ok); if (ok) print}' | KPopCount -k $K -L -f /dev/stdin | KPopCountDB -k /dev/stdin -R "~." -A $CLASS -L $CLASS -N -D -t /dev/stdout; done | KPopCountDB -k /dev/stdin -o Classes.$K -v
-KPopTwist -i Classes.$K -o Classes.$K -v
-cat clusters-small.fasta | awk -v K="$K" '{nr=(NR-1)%4; if (nr==2) split($0,s,"[>-]"); if (nr==3) print ">"s[2]"-"s[3]"\n"$0}' | KPopCount -k $K -L -f /dev/stdin | KPopTwistDB -i T Classes.$K -k /dev/stdin -o t /dev/stdout | KPopTwistDB -i T Classes.$K -i t Classes.$K -s /dev/stdin Test_prediction.$K -v
-echo -n ">>> Misclassified sequences: "; cat Test_prediction.$K.KPopSummary.txt | awk -F '\t' 'BEGIN{OFS="\t"} {$1=gensub("-","\t",1,$1); print}' | awk -F '\t' '{if ($2!=$7) print}' | wc -l
+KPopCount -k $K -f "" Train/Train.fasta -o Train-$K -v
+KPopCountDB -i Train-$K -m Train/CLASS.txt -c CLASS -o /dev/stdout | KPopTwist -i /dev/stdin -o Class-$K -v
+KPopCount -k $K -f "" Test/Test.fasta -o /dev/stdout | KPopTwistDB -i T Class-$K -t /dev/stdin -d Class-$K /dev/stdout -v | awk -F '\t' 'BEGIN{count=0} {split($1,s,"-"); if (s[2]!=$6) ++count} END{print count}'
 date
 ```
 
 That should produce an output such as this one:
 
 ```
-Wed 14 Feb 16:46:55 GMT 2024
-This is KPopCountDB version 38 [07-Feb-2024]
- compiled against: BiOCamLib version 242 [23-Jan-2024];
-                   KPop version 368 [07-Feb-2024]
- (c) 2020-2024 Paolo Ribeca <paolo.ribeca@gmail.com>
-(Dune__exe__KPopCountDB.KMerDB.add_files.(fun)): [1/1] File '/dev/stdin': Read 10 spectra on 5127 lines.
-(Dune__exe__KPopCountDB.KMerDB.to_binary): Outputting DB to file 'Classes.5.KPopCounter'... done.
-
-This is KPopTwist version 17 [02-Jan-2024]
- compiled against: BiOCamLib version 242 [23-Jan-2024];
-                   KPop version 368 [07-Feb-2024]
- (c) 2022-2024 Paolo Ribeca <paolo.ribeca@gmail.com>
-Wed 14 Feb 2024 16:47:19 GMT: [1/13] Exporting table...
-Wed 14 Feb 2024 16:47:19 GMT: [2/13] Splitting table...
-Wed 14 Feb 2024 16:47:19 GMT: [3/13] Reading table...
-Wed 14 Feb 2024 16:47:19 GMT: [4/13] Resampling table...
-Wed 14 Feb 2024 16:47:19 GMT: [5/13] Transforming table...
-Wed 14 Feb 2024 16:47:19 GMT: [6/13] Writing twisted...
-Wed 14 Feb 2024 16:47:19 GMT: [7/13] Writing inertia...
-Wed 14 Feb 2024 16:47:19 GMT: [8/13] Normalizing table...
-Wed 14 Feb 2024 16:47:19 GMT: [9/13] Transposing table...
-Wed 14 Feb 2024 16:47:19 GMT: [10/13] Writing twister...
-Wed 14 Feb 2024 16:47:19 GMT: [11/13] Encoding twisted...
-Wed 14 Feb 2024 16:47:19 GMT: [12/13] Encoding twister...
-Wed 14 Feb 2024 16:47:19 GMT: [13/13] Cleaning up...
-Wed 14 Feb 2024 16:47:19 GMT: All done.
-This is KPopTwistDB version 27 [17-Jan-2024]
- compiled against: BiOCamLib version 242 [23-Jan-2024];
-                   KPop version 368 [07-Feb-2024]
- (c) 2022-2024 Paolo Ribeca <paolo.ribeca@gmail.com>
-(Dune__exe__KPopTwistDB.Twister.of_binary): Reading DB from file 'Classes.5.KPopTwister'... done.
-(KPop__Matrix.of_binary): Reading DB from file 'Classes.5.KPopTwisted'... done.
-(KPop__Matrix.of_binary): Reading DB from file '/dev/stdin'... done.
-(KPop__Matrix.Base.get_normalizations): Done 500/500 rows.
-(KPop__Matrix.Base.get_normalizations): Done 10/10 rows.
-(KPop__Matrix.summarize_rowwise): Writing distance digest to file 'Test_prediction.5.KPopSummary.txt': done 500/500 rows.
->>> Misclassified sequences: 0
-Wed 14 Feb 16:47:41 GMT 2024
+Thu 11 Dec 20:49:53 GMT 2025
+╔━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╗
+┃                                              ┃
+┃  This is KPopCount version 28 [08-Dec-2025]  ┃
+┃                                              ┃
+╚┯━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╝
+ │ compiled against: BiOCamLib version 481 [10-Dec-2025];
+                     KPop version 740 [11-Dec-2025]
+ │ (c) 2017-2025 Paolo Ribeca <paolo.ribeca@gmail.com>
+(BiOCamLib__KMers.Iterator.Hasher.make): Initializing small encoder (bits=2, k=5)
+(Dune__exe__KPopCount.(fun)): Hashed and added 500 spectra from 1000 reads and 1 file.
+(KPop__KMerDB_Base.to_binary): Outputting database to file 'Train-5.KPopSpectra'... done.
+╔━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╗
+┃                                              ┃
+┃  This is KPopTwist version 30 [24-Oct-2025]  ┃
+┃                                              ┃
+╚┯━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╝
+ │ compiled against: BiOCamLib version 481 [10-Dec-2025];
+                     KPop version 740 [11-Dec-2025]
+ │ (c) 2022-2025 Paolo Ribeca <paolo.ribeca@gmail.com>
+Thu 11 Dec 2025 20:49:53 GMT: [1/16] Exporting table...
+Thu 11 Dec 2025 20:49:54 GMT: [2/16] Reading table...
+Thu 11 Dec 2025 20:49:54 GMT: [3/16] Splitting table...
+Thu 11 Dec 2025 20:49:54 GMT: [4/16] Discarding k-mers...
+Thu 11 Dec 2025 20:49:54 GMT: [5/16] Resampling k-mers...
+Thu 11 Dec 2025 20:49:54 GMT: [6/16] Thresholding k-mers...
+Thu 11 Dec 2025 20:49:54 GMT: [7/16] Normalizing counts...
+Thu 11 Dec 2025 20:49:54 GMT: [8/16] Twisting counts...
+Thu 11 Dec 2025 20:49:54 GMT: [9/16] Writing twisted...
+Thu 11 Dec 2025 20:49:54 GMT: [10/16] Writing inertia...
+Thu 11 Dec 2025 20:49:54 GMT: [11/16] Normalizing twister...
+Thu 11 Dec 2025 20:49:54 GMT: [12/16] Transposing twister...
+Thu 11 Dec 2025 20:49:54 GMT: [13/16] Writing twister...
+Thu 11 Dec 2025 20:49:54 GMT: [14/16] Encoding twisted...
+Thu 11 Dec 2025 20:49:54 GMT: [15/16] Encoding twister...
+Thu 11 Dec 2025 20:49:55 GMT: [16/16] Cleaning up...
+Thu 11 Dec 2025 20:49:55 GMT: All done.
+╔━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╗
+┃                                                ┃
+┃  This is KPopTwistDB version 47 [09-Nov-2025]  ┃
+┃                                                ┃
+╚┯━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╝
+ │ compiled against: BiOCamLib version 481 [10-Dec-2025];
+                     KPop version 740 [11-Dec-2025]
+ │ (c) 2022-2025 Paolo Ribeca <paolo.ribeca@gmail.com>
+       2024      Ünsal Öztürk <uensal.oeztuerk@gmail.com>
+(KPop__Twister.of_binary): Reading twister from file 'Class-5.KPopTwister'... done.
+(KPop__KMerDB_Base.of_binary): Reading database from file '/dev/stdin'... done.
+(KPop__Twister.add_twisted_from_database): Twisting spectra: done 500/500.
+(KPop__Twisted.of_binary): Reading vectors from file 'Class-5.KPopTwisted'... done.
+(KPop__Twisted.summarize_distances_rowwise): Writing distance digest to file '/dev/stdout': done 500/500 rows.
+0
+Thu 11 Dec 20:49:55 GMT 2025
 ```
 
 This is an example of `KPop`-based classifier. The input FASTA file [`clusters-small.fasta`](test/clusters-small.fasta) contains 1000 sequences having names such as `S2-C1`, meaning "sequence 2 belonging to class 1". There are 10 different classes. We will see how the process works in more detail in the following sections, but, to summarise:
@@ -229,7 +243,7 @@ Both OCaml and R are highly portable and you might be able to manually compile/i
 
 ### How does `KPop` compare with minimiser-based methods?
 
-`KPop` is much more sensitive than minimiser-based methods, allowing out-of-the-box accurate comparison of assembled or unassembled long sequences irrespective of whether they differ by single nucleotides or by large portions. This is usually not true for minimiser-based methods, irrespective of the hashing scheme they use, as they only produce a much coarser comparison. A number of benchmarks and a detailed explanation of the differences between the two approaches can be found in our [Genome Biology paper](https://doi.org/10.1186/s13059-025-03585-8).
+`KPop` is much more sensitive than minimiser-based methods, allowing out-of-the-box accurate comparison of assembled or unassembled long sequences irrespective of whether they differ by single nucleotides or by large portions. This is usually not true for minimiser-based methods no matter which hashing scheme they use, as they only produce a much coarser comparison. A number of benchmarks and a detailed explanation of the differences between the two approaches can be found in our [Genome Biology paper](https://doi.org/10.1186/s13059-025-03585-8).
 
 Crucially, while minimiser-based methods are geared towards providing distances between sequences, `KPop` explicitly produces *embeddings*, i.e., it is able to turn sequences into points of a low-dimensionality latent space. Having an explicit latent space is important for many reasons &mdash; it helps explainability; it also makes it possible to perform direct clustering and use vector [DBs](https://milvus.io/) or [libraries](https://github.com/facebookresearch/faiss) to store and search embedded sequences.
 
