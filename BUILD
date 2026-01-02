@@ -16,7 +16,6 @@ rm -rf _build
 
 # ...but we want to keep our build so as not to have to recompile OpenBLAS or faiss every time
 mkdir -p build
-rm -f build/Yggdrasill
 
 rm -f lib/libopenblas.a
 rm -f lib/libfaiss.a
@@ -44,7 +43,7 @@ rm -f lib/libinterfaiss.a
 
 # Build interfaiss
 ( cd lib
-  g++ -I ../faiss/ -O3 -fPIC -fopenmp -c -o libinterfaiss.o interfaiss.cpp
+  ../compilers/cxx -I ../faiss/ -O3 -fPIC -fopenmp -c -o libinterfaiss.o interfaiss.cpp
   ar rcs libinterfaiss.a libinterfaiss.o
   rm -f libinterfaiss.o )
 
