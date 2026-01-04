@@ -1,8 +1,8 @@
 (env
-  (dev
-    (ocamlopt_flags (:standard -O3 -fPIC -ccopt -O3 -ccopt -fPIC -ccopt -fopenmp)))
-  (release
-    (ocamlopt_flags (:standard -O3 -fPIC -ccopt -O3 -ccopt -fPIC -ccopt -fopenmp -ccopt -static))))
+ (dev
+  (ocamlopt_flags (:standard -O3 -fPIC -ccopt -O3 -ccopt -fPIC -ccopt -fopenmp)))
+ (release
+  (ocamlopt_flags (:standard -O3 -fPIC -ccopt -O3 -ccopt -fPIC -ccopt -fopenmp -ccopt -static))))
 
 (executables
  (public_names KPopCount KPopCountDB KPopTwist_ KPopTwistDB)
