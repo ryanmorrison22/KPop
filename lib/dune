@@ -1,7 +1,16 @@
+(env
+ (dev
+  (c_flags :standard -fopenmp))
+ (dev-static
+  (c_flags :standard -fopenmp))
+ (release
+  (c_flags :standard -O3 -fomit-frame-pointer -fopenmp))
+ (release-static
+  (c_flags :standard -O3 -fomit-frame-pointer -fopenmp)))
+
 (library
  (public_name KPop)
  (name KPop)
  (libraries BiOCamLib)
  (foreign_archives interfaiss faiss openblas)
- (foreign_stubs (language c) (names interfaiss_ocaml)
-  (flags :standard -O3 -fomit-frame-pointer -fopenmp)))
+ (foreign_stubs (language c) (names interfaiss_ocaml) (flags :standard)))

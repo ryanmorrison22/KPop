@@ -1,7 +1,11 @@
 (env
  (dev
-  (ocamlopt_flags (:standard -O3 -fPIC -ccopt -O3 -ccopt -fPIC -ccopt -fopenmp)))
+  (ocamlopt_flags (:standard -g -fPIC -ccopt -fPIC -ccopt -fopenmp)))
+ (dev-static
+  (ocamlopt_flags (:standard -g -fPIC -ccopt -fPIC -ccopt -fopenmp -ccopt -static)))
  (release
+  (ocamlopt_flags (:standard -O3 -fPIC -ccopt -O3 -ccopt -fPIC -ccopt -fopenmp)))
+ (release-static
   (ocamlopt_flags (:standard -O3 -fPIC -ccopt -O3 -ccopt -fPIC -ccopt -fopenmp -ccopt -static))))
 
 (executables

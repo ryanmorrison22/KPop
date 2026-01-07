@@ -67,7 +67,7 @@ mv _build/default/bin/KPopTwistDB.exe build/KPopTwistDB
 
 chmod 755 build/*
 
-if [[ "$PROFILE" == "release" ]]; then
+if [[ "$PROFILE" == "release" || "$PROFILE" == "release-static" ]]; then
   strip build/{KPopCount,KPopCountDB,KPopTwist_,KPopTwistDB}
   rm -rf _build
 fi
