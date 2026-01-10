@@ -14,7 +14,7 @@ The `KPop` project gratefully acknowledges funding by several institutions, whic
  </tr>
  <tr><td>The NIHR's HPRU GED</td></tr>
  <tr><td>The Scottish Government's RESAS</td></tr>
- <tr><td>The <a href="https://bbsrc.ac.uk">BBSRC</a> for providing <a href="https://www.cropdiversity.ac.uk/">computing resources</a></td></tr>
+ <tr><td>The <a href="https://www.ukri.org/councils/bbsrc/">BBSRC</a> for providing <a href="https://www.cropdiversity.ac.uk/">computing resources</a></td></tr>
 </table>
 
 And finally, the awesome `KPop` logo was created by [Emily Fotopoulou](https://github.com/EmilyFotopoulou), to whom our heartfelt thanks go!
