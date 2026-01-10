@@ -256,7 +256,7 @@ include (
       close_in input;
       (* Remember that meta is stored rowwise, but db columnwise *)
       let n_cols = Array.length meta.col_names and n_rows = Array.length meta.row_names
-      and db = ref db and col_num = ref 0 in
+      and db = ref db in
       for i = 0 to n_cols - 1 do
         (* The names of the spectra to be added must be already present *)
         let label = meta.col_names.(i) in
@@ -267,16 +267,15 @@ include (
         for j = 0 to n_rows - 1 do
           set_metadata db label meta.row_names.(j) meta.data.(j).(i)
         done;
-        if verbose && !col_num mod 5 = 0 then
+        if verbose && i mod 5 = 0 then
           Printf.eprintf "%s\r(%s): Annotated %d/%d %s%!"
-            String.TermIO.clear __FUNCTION__ !col_num n_cols
-              (String.pluralize_int ~plural:"spectra" "spectrum" !col_num);
-        incr col_num
+            String.TermIO.clear __FUNCTION__ i n_cols
+              (String.pluralize_int ~plural:"spectra" "spectrum" i)
       done;
       if verbose then
         Printf.eprintf "%s\r(%s): Annotated %d/%d %s.\n%!"
-          String.TermIO.clear __FUNCTION__ !col_num n_cols
-            (String.pluralize_int ~plural:"spectra" "spectrum" !col_num);
+          String.TermIO.clear __FUNCTION__ n_cols n_cols
+            (String.pluralize_int ~plural:"spectra" "spectrum" n_cols);
       !db
     (* Implementation functions *)
     let merge_verbose_output_iter __FUNCTION__ n_cols n_lines col_num line_num =
