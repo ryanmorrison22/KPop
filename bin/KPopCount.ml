@@ -93,10 +93,10 @@ module Parameters =
 
 let info = {
   Tools.Argv.name = "KPopCount";
-  version = "28";
-  date = "08-Dec-2025"
+  version = "29";
+  date = "10-Jan-2026"
 } and authors = [
-  "2017-2025", "Paolo Ribeca", "paolo.ribeca@gmail.com"
+  "2017-2026", "Paolo Ribeca", "paolo.ribeca@gmail.com"
 ]
 
 let () =
