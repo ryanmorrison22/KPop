@@ -413,10 +413,12 @@ let () =
                 IntBAS.clear keys;
                 F32BAS.clear vals;
                 k_mer_finalizer ();
-                (* If there are new hashes, we send them *)
+                (* We send new hashes and counts associated with the label *)
                 let keys = IntBAS.contents keys and vals = F32BAS.contents vals in
                 let num_hashes = Array.length !hashes in
-                if Numbers.IntBAVector.length keys > 0 then
+                (* Note that it is OK for some labels not to have any associated k-mers,
+                    so in such cases we have to send the label anyway *)
+                if Numbers.IntBAVector.length keys > 0 || read_label <> "" then
                   Tools.ArrayStack.push res begin
                     file_cntr, read_label, !old_num_hashes,
                     Array.sub !hashes !old_num_hashes (num_hashes - !old_num_hashes),
@@ -443,7 +445,7 @@ let () =
                 done;
                 if !file_idx < num_files then begin
                   (* If we got here, the iterator is valid *)
-                  while !acc_len < !max_len && Iter.is_empty !it |> not do
+                  while Iter.is_empty !it |> not && !acc_len < !max_len do
                     Iter.get_and_incr !it
                       (fun (_, _, read) ->
                         let len = String.length read.seq in
