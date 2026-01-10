@@ -7,16 +7,14 @@
 Some easy-to-use Nextflow-based `KPop` workflows implemented by Ryan Morrison can be found [here](https://github.com/ryanmorrison22/kpop-workflow).
 
 The `KPop` project gratefully acknowledges funding by several institutions, which allowed development to continue over a number of years:
-
-<table style="border: none;">
- <tbody>
-  <tr>
-   <td style="border: none;"><img src="./images/HPRU-GED-Logo.png"></img></td>
-   <td style="border: none;"><a href="https://neardata.eu"><img src="./images/NEARDATA-Logo.svg"></img></a></td>
-   <td style="border: none;"><img src="./images/RESAS-Logo.jpg"></img></td>
-   <td style="border: none;"><a href="https://bbsrc.ac.uk"><img src="./images/BBSRC-Logo.svg"></img></a></td>
-  </tr>
- </tbody>
+<table>
+ <tr>
+  <td><a href="https://neardata.eu">The European Union's NEARDATA</a></td>
+  <td rowspan="4"><img src="images/Logos.png"></td>
+ </tr>
+ <tr><td>The NIHR's HPRU GED</td></tr>
+ <tr><td>The Scottish Government's RESAS</td></tr>
+ <tr><td>The <a href="https://bbsrc.ac.uk">BBSRC</a> for providing <a href="https://www.cropdiversity.ac.uk/">computing resources</a></td></tr>
 </table>
 
 And finally, the awesome `KPop` logo was created by [Emily Fotopoulou](https://github.com/EmilyFotopoulou), to whom our heartfelt thanks go!
