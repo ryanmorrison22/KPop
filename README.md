@@ -1,12 +1,25 @@
+![](images/KPop-Logo.png)
 
 # `KPop`: Unleash the full power of your *k*-mers!
 
 `KPop` is an assembly-free and scalable method for the comparative analysis of microbial genomes and environmental samples. It is based on full *k*-mer spectra and dataset-specific transformations; it allows to accurately compare hundreds of thousands of assembled, or thousands of unassembled microbial genomes or sequenced samples, in a matter of hours. It provides excellent resolution across a very large number of use cases and applications. More details can be found in our [Genome Biology paper](https://doi.org/10.1186/s13059-025-03585-8).
 
-The `KPop` project gratefully acknowledges funding by several institutions that has allowed its development to continue over several years:
+Some easy-to-use Nextflow-based `KPop` workflows implemented by Ryan Morrison can be found [here](https://github.com/ryanmorrison22/kpop-workflow).
 
-| ![](images/HPRU-GED-Logo.png) | [![](images/NEARDATA-Logo.svg)](https://neardata.eu) | ![](images/RESAS-Logo.jpg) | [![](images/BBSRC-Logo.svg)](https://bbsrc.ac.uk) |
-|-|-|-|-|
+The `KPop` project gratefully acknowledges funding by several institutions, which allowed development to continue over a number of years:
+
+<table style="border: none;">
+ <tbody>
+  <tr>
+   <td style="border: none;"><img src="./images/HPRU-GED-Logo.png"></img></td>
+   <td style="border: none;"><a href="https://neardata.eu"><img src="./images/NEARDATA-Logo.svg"></img></a></td>
+   <td style="border: none;"><img src="./images/RESAS-Logo.jpg"></img></td>
+   <td style="border: none;"><a href="https://bbsrc.ac.uk"><img src="./images/BBSRC-Logo.svg"></img></a></td>
+  </tr>
+ </tbody>
+</table>
+
+And finally, the awesome `KPop` logo was created by [Emily Fotopoulou](https://github.com/EmilyFotopoulou), to whom our heartfelt thanks go!
 
 ## Table of contents
 
