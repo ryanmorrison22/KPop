@@ -2,7 +2,7 @@
 
 # `KPop`: Unleash the full power of your *k*-mers!
 
-`KPop` is an assembly-free and scalable method for the comparative analysis of microbial genomes and environmental samples. It is based on full *k*-mer spectra and dataset-specific transformations; it allows to accurately compare hundreds of thousands of assembled, or thousands of unassembled microbial genomes or sequenced samples, in a matter of hours. It provides excellent resolution across a very large number of use cases and applications. More details can be found in our [Genome Biology paper](https://doi.org/10.1186/s13059-025-03585-8).
+`KPop` is a scalable method for the comparative analysis of microbial genomes and environmental samples; it transforms each input sequence or sample into a point (also called "vector" or "embedding") living in an abstract space with a moderate number of dimensions. `KPop` is based on full *k*-mer spectra and dataset-specific transformations; it allows to accurately compare hundreds of thousands of assembled, or thousands of unassembled microbial genomes or sequenced samples, in a matter of hours. It provides excellent resolution across a very large number of use cases and applications, even when the underlying genomic diversity is low. More details can be found in our [Genome Biology paper](https://doi.org/10.1186/s13059-025-03585-8).
 
 Some easy-to-use Nextflow-orchestrated `KPop` workflows implemented by Ryan Morrison can be found [here](https://github.com/ryanmorrison22/kpop-workflow).
 
