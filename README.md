@@ -348,40 +348,52 @@ KPopCount -h
 ```
 in your terminal. You will see a header containing information about the version:
 ```
-This is KPopCount version 14 [18-Mar-2024]
- compiled against: BiOCamLib version 248 [18-Mar-2024];
-                   KPop version 417 [05-Mar-2024]
- (c) 2017-2024 Paolo Ribeca <paolo.ribeca@gmail.com>
+This is KPopCount version 29 [10-Jan-2026]
+ compiled against: BiOCamLib version 498 [10-Jan-2026];
+                   KPop version 767 [10-Jan-2026]
+ (c) 2017-2026 Paolo Ribeca <paolo.ribeca@gmail.com>
 ```
 followed by detailed information. The general form the command can be used is:
 ```
-KPopCount -l <output_vector_label>|-L [OPTIONS]
+KPopCount [ACTIONS]
 ```
 
-**Algorithmic parameters**
+**Actions.**
+They are executed delayed and in order of specification.
+
+Input/Output of spectra databases:
 
 | Option | Argument(s) | Effect | Note(s) |
 |-|-|-|-|
-| `-k`<br>`-K`<br>`--k-mer-size`<br>`--k-mer-length` | _k\_mer\_length_ |  *k*\-mer length (must be positive, and &lt;= 30 for DNA or &lt;= 12 for protein) | <ins>default=<mark>_12_</mark></ins> |
-| `-M`<br>`--max-results-size` | _positive\_integer_ |  maximum number of *k*\-mer hashes to be kept in memory at any given time\.<br>If more are present, the ones corresponding to the lowest cardinality will be removed from memory and printed out, and there will be repeated hashes in the output | <ins>default=<mark>_16777216_</mark></ins> |
+| `-0`<br>`--zero`<br>`--empty` |  |  load an empty database into the register |  |
+| `-i`<br>`--input` | _binary\_file\_prefix_ |  load into the register the database present in the specified file  (which must have extension `.KPopSpectra` unless file is `/dev/*`) |  |
+| `-o`<br>`--output` | _binary\_file\_prefix_ |  save the database present in the register to the specified file  (which will be given extension `.KPopSpectra` unless file is `/dev/*`) |  |
 
-**Input/Output**
-
-| Option | Argument(s) | Effect | Note(s) |
-|-|-|-|-|
-| `-C`<br>`--content` | `DNA-ss` _&#124;_ `DNA-single-stranded` _&#124;_ `DNA-ds` _&#124;_ `DNA-double-stranded` _&#124;_ `protein` |  how file contents should be interpreted\.<br>When content is `DNA-ss` or `protein`, the sequence is hashed; when content is `DNA-ds`, both sequence and reverse complement are hashed\.<br>`DNA-ss` prevents automatic matching of reverse\-complemented sequences; use it only when comparing a set of single, homogeneus sequences | <ins>default=<mark>_DNA\-ds_</mark></ins> |
-| `-f`<br>`--fasta` | _fasta\_file\_name_ |  FASTA input file containing sequences\.<br>You can specify more than one FASTA input, but not FASTA and FASTQ inputs at the same time\. Contents are expected to be homogeneous across inputs |  |
-| `-s`<br>`--single-end` | _fastq\_file\_name_ |  FASTQ input file containing single\-end sequencing reads You can specify more than one FASTQ input, but not FASTQ and FASTA inputs at the same time\. Contents are expected to be homogeneous across inputs |  |
-| `-p`<br>`--paired-end` | _fastq\_file\_name1 fastq\_file\_name2_ |  FASTQ input files containing paired\-end sequencing reads You can specify more than one FASTQ input, but not FASTQ and FASTA inputs at the same time\. Contents are expected to be homogeneous across inputs |  |
-| `-l`<br>`--label` | _output\_vector\_label_ |  label to be given to the *k*\-mer spectrum in the output file\.<br>It must not contain double quote `'"'` characters\.<br>Either option `-l` or option `-L` is mandatory |  |
-| `-L`<br>`--one-spectrum-per-sequence` |  |  output one spectrum per input sequence, using the sequence name as label\.<br>Sequence names must not contain double quote `'"'` characters\.<br>Either option `-l` or option `-L` is mandatory |  |
-| `-o`<br>`--output` | _output\_file\_name_ |  name of generated output file | <ins>default=<mark>_stdout_</mark></ins> |
-
-**Miscellaneous**
+Algorithmic parameters:
 
 | Option | Argument(s) | Effect | Note(s) |
 |-|-|-|-|
-| `-v`<br>`--verbose` |  |  set verbose execution | <ins>default=<mark>_false_</mark></ins> |
+| `-k`<br>`--k-mer-size`<br>`--k-mer-length` | _positive\_integer_ |  set the hashing strategy to iteration over regular *k*-mers and specify the *k*-mer length to be used\.<br>Options `-k` and `-g` are mutually exclusive; if multiple are specified, the last one will take effect | <ins>default=<mark>_continuous *k*-mers of size 12_</mark></ins> |
+| `-g`<br>`--gapped-k-mer-sizes`<br>`--gapped-k-mer-lengths` | _BLOCK\_SIZE GAP\_SIZE_ |  where<br>&nbsp;_BLOCK\-SIZE := positive\_integer_<br>&nbsp;_GAP\-SIZE := positive\_integer_<br>Set the hashing strategy to iteration over symmetrical gapped *k*-mers (having a _BLOCK_-_GAP_-_BLOCK_ structure, with _BLOCK_-s of the same size) and specify their geometry in terms of _BLOCK_ and _GAP_ sizes, respectively\.<br>For instance, option `-g 5 1` will iterate on all existing *k*-mers of size 11 (5+1+5) and not take the central nucleotide into account for the purpose of computing the hash\.<br>Options `-k` and `-g` are mutually exclusive; if multiple are specified, the last one will take effect | <ins>default=<mark>_not\_used_</mark></ins> |
+| `-c`<br>`--content` | `ss-DNA` _&#124;_ `single-stranded-DNA` _&#124;_ `ds-DNA` _&#124;_`double-stranded-DNA` _&#124;_ `protein` _&#124;_ _FULL_ |  set how contents of following input files should be interpreted\.<br>When content is `ss-DNA`, `protein` or `text`, only the sequence is hashed; when content is `ds-DNA`, both sequence and reverse complement are hashed\.<br>`ss-DNA` prevents automatic matching of reverse\-complemented sequences; use it only when comparing a set of single, homogeneus sequences\.<br>These are shortcuts for the full form of this option, which is defined as<br>&nbsp;_FULL :=_<br>&nbsp;&nbsp;_&#124;_&nbsp;`DNA(`_STRANDEDNESS_`,`_CASE\_SENSITIVITY_`,`_UNKNOWN\_CHAR\_ACTION_`)`<br>&nbsp;&nbsp;_&#124;_&nbsp;`protein(`_UNKNOWN\_CHAR\_ACTION_`)`<br>&nbsp;&nbsp;_&#124;_&nbsp;`text(`_CASE\_SENSITIVITY_`,`_UNKNOWN\_CHAR\_ACTION_`,`_dictionary\_file\_name_`)`<br>where<br>&nbsp;_STRANDEDNESS :=_`ss`_&#124;_`single-stranded`_&#124;_`ds`_&#124;_`double-stranded`<br>&nbsp;_CASE\_SENSITIVITY :=_`ci`_&#124;_`case-insensitive`_&#124;_`cs`_&#124;_`case-sensitive`<br>&nbsp;_UNKNOWN\_CHAR\_ACTION :=_`split`_&#124;_`ignore`_&#124;_`error`<br>If `case-insensitive` is specified, DNA/protein sequences are converted to uppercase characters, while text sequences (and dictionary entries) are converted to lowercase characters\.<br>_UNKNOWN\_CHAR\_ACTION_ decides what happens when an unknown character is found in the input\. Option `split` (the default for DNA/protein sequences) splits the input sequence and skips unknown characters (for instance `N`/`X`) whenever they are encountered; option `ignore` (the default for text) silently skips unknown characters (for instance whitespace); option `error` causes the program to abort\.<br>If a dictionary file is specified, each of its lines is interpreted as a different dictionary entry/token | <ins>default=<mark>`DNA(double-stranded,case-insensitive,split)`</mark></ins> |
+| `-w`<br>`--weights`<br>`--weights-from-sequence-names` | _non\_negative\_integer_ |  given the index _n_ specified as a parameter, extract the _n_-th number from each sequence name and weigh the corresponding sequence accordingly\.<br>Indices are 1\-based; a value of `0` disables weighting\.<br>If no such field exists, the program will fail\.<br>If the weight is a float number, the ceiling of such number will be used | <ins>default=<mark>_do not weigh_</mark></ins> |
+
+Input/Output of sequences for processing:
+
+| Option | Argument(s) | Effect | Note(s) |
+|-|-|-|-|
+| `-f`<br>`--fasta` | _label fasta\_file\_name_ |  process the sequences contained in the specified FASTA input file\.<br>If a label is specified, the hashes extracted from all the sequences are collected into one spectrum having the label as name; if the label is empty, each sequence is turned into one separate spectrum and the sequence name is used as label\. Label and sequence names must not contain double quote `"` characters\.<br>While you can specify several inputs possibly having different formats, contents are expected to be homogeneous across inputs |  |
+| `-s`<br>`--single-end` | _label fastq\_file\_name_ |  process the sequences contained in the specified FASTQ input file containing single\-end sequencing reads\.<br>If a label is specified, the hashes extracted from all the sequences are collected into one spectrum having the label as name; if the label is empty, each sequence is turned into one separate spectrum and the sequence name is used as label\. Label and sequence names must not contain double quote `"` characters\.<br>While you can specify several inputs possibly having different formats, contents are expected to be homogeneous across inputs |  |
+| `-p`<br>`--paired-end` | _label fastq\_file\_name1 fastq\_file\_name2_ |  process the sequences contained in the specified FASTQ input file containing paired\-end sequencing reads\.<br>If a label is specified, the hashes extracted from all the sequences are collected into one spectrum having the label as name; if the label is empty, each sequence is turned into one separate spectrum and the sequence name is used as label\. Label and sequence names must not contain double quote `"` characters\.<br>While you can specify several inputs possibly having different formats, contents are expected to be homogeneous across inputs |  |
+| `-t`<br>`--tabular` | _label tabular\_file\_name_ |  process the sequences contained in the specified tabular input file\.<br>If a label is specified, the hashes extracted from all the sequences are collected into one spectrum having the label as name; if the label is empty, each sequence is turned into one separate spectrum and the sequence name is used as label\. Label and sequence names must not contain double quote `"` characters\.<br>While you can specify several inputs possibly having different formats, contents are expected to be homogeneous across inputs |  |
+
+**Miscellaneous options.**
+They are set immediately
+
+| Option | Argument(s) | Effect | Note(s) |
+|-|-|-|-|
+| `-T`<br>`--threads` | _computing\_threads_ |  number of concurrent computing threads to be spawned  (default automatically detected from your configuration) | <ins>default=<mark>_4_</mark></ins> |
+| `-v`<br>`--verbose` |  |  set verbose execution | <ins>default=<mark>_quiet execution_</mark></ins> |
 | `-V`<br>`--version` |  |  print version and exit |  |
 | `-h`<br>`--help` |  |  print syntax and exit |  |
 
@@ -393,10 +405,10 @@ KPopCountDB -h
 ```
 in your terminal. You will see a header containing information about the version:
 ```
-This is KPopCountDB version 41 [18-Mar-2024]
- compiled against: BiOCamLib version 248 [18-Mar-2024];
-                   KPop version 417 [05-Mar-2024]
- (c) 2020-2024 Paolo Ribeca <paolo.ribeca@gmail.com>
+This is KPopCountDB version 55 [10-Dec-2025]
+ compiled against: BiOCamLib version 498 [10-Jan-2026];
+                   KPop version 767 [10-Jan-2026]
+ (c) 2020-2025 Paolo Ribeca <paolo.ribeca@gmail.com>
 ```
 followed by detailed information. The general form the command can be used is:
 ```
@@ -406,29 +418,33 @@ KPopCountDB [ACTIONS]
 **Actions.**
 They are executed delayed and in order of specification.
 
-Actions on the database register:
+Actions on the database register \- Input/Output operations:
 
 | Option | Argument(s) | Effect | Note(s) |
 |-|-|-|-|
-| `-e`<br>`--empty` |  |  put an empty database into the register |  |
-| `-i`<br>`--input` | _binary\_file\_prefix_ |  load into the register the database present in the specified file  (which must have extension `.KPopCounter`) |  |
-| `-m`<br>`--metadata`<br>`--add-metadata` | _metadata\_table\_file\_name_ |  add to the database present in the register metadata from the specified file\.<br>Metadata field names and values must not contain double quote `'"'` characters |  |
-| `-k`<br>`--kmers`<br>`--add-kmers`<br>`--add-kmer-files` | _k\-mer\_table\_file\_name\[_`,`_\.\.\._`,`_k\-mer\_table\_file\_name\]_ |  add to the database present in the register *k*\-mers from the specified files |  |
+| `-0`<br>`--zero`<br>`--empty` |  |  load an empty database into the register |  |
+| `-i`<br>`--input` | _binary\_file\_prefix_ |  load into the register the database present in the specified binary file  (which must have extension `.KPopSpectra` unless file is `/dev/*`) |  |
+| `-I`<br>`--Input` | _tabular\_file\_prefix_ |  load into the register the database present in the specified tabular files  (which must have extensions `.KPopKMatrix.txt` and `.KPopMMatrix.txt`   unless file is `/dev/*`) |  |
+| `--addition-criterion`<br>`--database-addition-criterion` | `first` _&#124;_ `second` _&#124;_ `union` _&#124;_ `intersect` |  set the criterion used to combine databases of spectra\.<br>Possibilities are:<dl><dt>`first`</dt><dd>The resulting database will have the same *k*-mer and metadata labels   as the first database</dd><dt>`second`</dt><dd>The resulting database will have the same *k*-mer and metadata labels   as the second database</dd><dt>`union`</dt><dd>The resulting database will have as *k*-mer and metadata labels the   union of the *k*-mer and metadata labels of the two databases</dd><dt>`intersect`</dt><dd>The resulting database will have as *k*-mer and metadata labels the   intersection of the *k*-mer and metadata labels of the two databases\.</dd></dl>For criteria `first`, `second`, and `union`, missing data will be set to zero in the case of *k*-mer counts, and to the empty string in the case of metadata entries | <ins>default=<mark>`union`</mark></ins> |
+| `-a`<br>`--add`<br>`--add-database` | _binary\_file\_prefix_ |  add to the register the database present in the specified binary file  (which must have extension `.KPopSpectra` unless file is `/dev/*`) |  |
+| `-m`<br>`--metadata`<br>`--add-metadata` | _metadata\_table\_file\_name_ |  add to the register metadata from the specified tabular file\.<br>Metadata should be presented as a tab\-separated text table, with a header containing spectrum labels and with row names being metadata fields labels\.<br>Spectrum labels, metadata field names and metadata values must not contain double quote `"` characters |  |
 | `--summary` |  |  print a summary of the database present in the register |  |
-| `-o`<br>`--output` | _binary\_file\_prefix_ |  dump the database present in the register to the specified file  (which will be given extension `.KPopCounter`) |  |
-| `--distance`<br>`--distance-function` | `euclidean` _&#124;_ `minkowski(`_non\_negative\_float_`)` |  set the function to be used when computing distances\.<br>The parameter for `minkowski()` is the power | <ins>default=<mark>_euclidean_</mark></ins> |
-| `--distance-normalize`<br>`--normalize-distances`<br>`--distance-normalization` | `true` _&#124;_ `false` |  whether spectra should be normalized prior to computing distances |  |
-| `-d`<br>`--distances`<br>`--compute-distances`<br>`--compute-spectral-distances` | _REGEXP\_SELECTOR REGEXP\_SELECTOR binary\_file\_prefix_ |  where _REGEXP\_SELECTOR :=  metadata\_field_`~`_regexp\[_`,`_\.\.\._`,`_metadata\_field_`~`_regexp\]_ and regexps are defined according to [https://ocaml.org/api/Str.html](https://ocaml.org/api/Str.html):<br>select two sets of spectra from the register and compute and output distances between all possible pairs<br>(metadata fields must match the regexps specified in the selector;   an empty metadata field makes the regexp match labels\.<br>  The result will have extension `.KPopDMatrix`) |  |
-| `--table-output-row-names` | `true` _&#124;_ `false` |  whether to output row names for the database present in the register when writing it as a tab\-separated file | <ins>default=<mark>_true_</mark></ins> |
-| `--table-output-col-names` | `true` _&#124;_ `false` |  whether to output column names for the database present in the register when writing it as a tab\-separated file | <ins>default=<mark>_true_</mark></ins> |
-| `--table-output-metadata` | `true` _&#124;_ `false` |  whether to output metadata for the database present in the register when writing it as a tab\-separated file | <ins>default=<mark>_false_</mark></ins> |
-| `--table-transpose` | `true` _&#124;_ `false` |  whether to transpose the database present in the register before writing it as a tab\-separated file  (if `true`: rows are spectrum names, columns [metadata and] *k*\-mer names;   if `false`: rows are [metadata and] *k*\-mer names, columns spectrum names) | <ins>default=<mark>_false_</mark></ins> |
-| `--table-threshold` | _non\_negative\_integer_ |  set to zero all counts that are less than this threshold before transforming and outputting them | <ins>default=<mark>_1_</mark></ins> |
-| `--table-power` | _non\_negative\_float_ |  raise counts to this power before transforming and outputting them\.<br>A power of 0 when the `pseudocounts` method is used performs a logarithmic transformation | <ins>default=<mark>_1\._</mark></ins> |
-| `--table-transform`<br>`--table-transformation` | `none` _&#124;_ `normalize` _&#124;_ `pseudocounts` _&#124;_ `clr` |  transformation to apply to table elements before outputting them | <ins>default=<mark>_normalize_</mark></ins> |
-| `--table-output-zero-rows` | `true` _&#124;_ `false` |  whether to output rows whose elements are all zero when writing the database as a tab\-separated file | <ins>default=<mark>_false_</mark></ins> |
-| `--table-precision` | _positive\_integer_ |  set the number of precision digits to be used when outputting counts | <ins>default=<mark>_15_</mark></ins> |
-| `-t`<br>`--table` | _file\_prefix_ |  write the database present in the register as a tab\-separated file  (rows are *k*\-mer names, columns are spectrum names;   the file will be given extension `.KPopCounter.txt`) |  |
+| `-o`<br>`--output` | _binary\_file\_prefix_ |  save the database present in the register to the specified file  (which will be given extension `.KPopSpectra` unless file is `/dev/*`) |  |
+| `--precision` | _positive\_integer_ |  set the number of precision digits to be used for tabular output | <ins>default=<mark>_15_</mark></ins> |
+| `--Output-zero-kmers`<br>`--Output-zero-k-mers` | `true` _&#124;_ `false` |  whether to output *k*-mers whose frequencies are all zero when writing the database as tabular files | <ins>default=<mark>`true`</mark></ins> |
+| `-O`<br>`--Output` | _tabular\_file\_prefix_ |  write the database present in the register as tab\-separated files\.<br>File extensions are automatically assigned  (will be `.KPopKMatrix.txt` and `.KPopMMatrix.txt`,   unless file is `/dev/*`) |  |
+
+Actions on the database register \- Other operations:
+
+| Option | Argument(s) | Effect | Note(s) |
+|-|-|-|-|
+| `--combination-criterion`<br>`--spectrum-combination-criterion` | `mean` _&#124;_ `median` |  set the criterion used to combine the *k*\-mer frequencies of selected spectra\.<br>To avoid rounding issues, each *k*\-mer frequency is also rescaled by the largest normalization across spectra  (`mean` averages frequencies across spectra; `median` computes the median across spectra) | <ins>default=<mark>_mean_</mark></ins> |
+| `-c`<br>`--combine`<br>`--combine-by-class`<br>`--combine-spectra-by-class` | _&lt;classes\_metadata\_field\_name&gt;_ |  split the database into classes according to the labels contained in the specified metadata field and combine the spectra belonging to each class into a separate vector named as the class label\. Delete original spectra\.<br>Class label cannot be the same as the name of an existing spectrum |  |
+| `--transform` | _TRANSFORMATION_ |  replace the database with the one obtained from the specified transformation\.<br>Transformations are defined as follows:<br>&nbsp;  _TRANSFORMATION :=_<br>&nbsp;&nbsp;_&#124;_&nbsp;`threshold(`_non\-negative\_float_`)`<br>&nbsp;&nbsp;_&#124;_&nbsp;`power(`_float_`)`<br>&nbsp;&nbsp;_&#124;_&nbsp;`binary`<br>&nbsp;&nbsp;_&#124;_&nbsp;`clr`<br>&nbsp;&nbsp;_&#124;_&nbsp;`pseudocounts(`_POWER_`,`_QUANTIZE_`)`<br>&nbsp;_POWER := non\-negative\_float_<br>&nbsp;_QUANTIZE :=_`false`_&#124;_`true`<br>A value such that 0. &leq; _THRESHOLD_ &lt; 1. is interpreted as a fraction relative to the sum of all the counts in the spectrum; values such that _THRESHOLD_ &geq; 1\. are considered absolute thresholds; `binary` is an alias for `power(0)`.<br>For the exact definition of transformations `clr` and `pseudocounts`, see  [https://doi\.org/10\.1186/s13059\-025\-03585\-8](https://doi\.org/10\.1186/s13059\-025\-03585\-8) | <ins>default=<mark>`power(1)`</mark></ins> |
+| `-d`<br>`--distill`<br>`--distill-kmers` | _classes\_metadata\_field\_name summary\_file\_prefix_ |  optimize *k*-mers by identifying which ones are most informative according to the labels contained in the specified metadata field and by re-sorting *k*-mers in decreasing order accordingly\.<br>The labels must identify at least two equivalence classes, and fewer classes than the number of *k*-mers\.<br>Details of the procedure will be written to the specified summary file  (which will be given extension `.KPopDistill.txt` unless file is `/dev/*`) |  |
+| `--distance`<br>`--distance-function` | `euclidean` _&#124;_ `minkowski(`_non-negative\_float_`)` |  set the function to be used when computing distances\.<br>The parameter for `minkowski()` is the power | <ins>default=<mark>`euclidean`</mark></ins> |
+| `--distance-normalize`<br>`--distance-normalization` | `true` _&#124;_ `false` |  whether spectra should be normalized prior to computing distances | <ins>default=<mark>_true_</mark></ins> |
+| `--distances`<br>`--compute-distances`<br>`--compute-spectral-distances` | _REGEXP\_SELECTOR REGEXP\_SELECTOR binary\_file\_prefix_ |  where<br>&nbsp;_REGEXP\_SELECTOR :=  metadata\_field_`~`_regexp\[_`,`_\.\.\._`,`_metadata\_field_`~`_regexp\]_<br>and regexps are defined according to [https://ocaml.org/api/Str.html](https://ocaml.org/api/Str.html):<br>select two sets of spectra from the register and compute and output distances between all possible pairs<br>(metadata fields must match the regexps specified in the selector;<br>   an empty metadata field makes the regexp match labels\.<br>  The result will be given extension `.KPopDMatrix` unless file is `/dev/*`) |  |
 
 Actions involving the selection register:
 
@@ -436,13 +452,11 @@ Actions involving the selection register:
 |-|-|-|-|
 | `-L`<br>`--labels`<br>`--selection-from-labels` | _spectrum\_label\[_`,`_\.\.\._`,`_spectrum\_label\]_ |  put into the selection register the specified labels |  |
 | `-R`<br>`--regexps`<br>`--selection-from-regexps` | _metadata\_field_`~`_regexp\[_`,`_\.\.\._`,`_metadata\_field_`~`_regexp\]_ |  put into the selection register the labels of the spectra whose metadata fields match the specified regexps and where regexps are defined according to [https://ocaml.org/api/Str.html](https://ocaml.org/api/Str.html)\.<br>An empty metadata field makes the regexp match labels |  |
-| `--selection-combination-criterion`<br>`--combination-criterion` | `mean` _&#124;_ `median` |  set the criterion used to combine the *k*\-mer frequencies of selected spectra\.<br>To avoid rounding issues, each *k*\-mer frequency is also rescaled by the largest normalization across spectra  (`mean` averages frequencies across spectra; `median` computes the median across spectra) | <ins>default=<mark>_mean_</mark></ins> |
 | `-A`<br>`--add-combined-selection`<br>`--selection-combine-and-add` | _spectrum\_label_ |  combine the spectra whose labels are in the selection register and add the result (or replace it if a spectrum named _spectrum\_label_ already exists) to the database present in the database register |  |
 | `-D`<br>`--delete`<br>`--selection-delete` |  |  drop the spectra whose labels are in the selection register from the database present in the register |  |
 | `-N`<br>`--selection-negate` |  |  negate the labels that are present in the selection register |  |
 | `-P`<br>`--selection-print` |  |  print the labels that are present in the selection register |  |
 | `-C`<br>`--selection-clear` |  |  purge the selection register |  |
-| `-F`<br>`--selection-to-table-filter` |  |  filter out spectra whose labels are present in the selection register when writing the database as a tab\-separated file |  |
 
 **Miscellaneous options.**
 They are set immediately
@@ -450,7 +464,7 @@ They are set immediately
 | Option | Argument(s) | Effect | Note(s) |
 |-|-|-|-|
 | `-T`<br>`--threads` | _computing\_threads_ |  number of concurrent computing threads to be spawned  (default automatically detected from your configuration) | <ins>default=<mark>_nproc_</mark></ins> |
-| `-v`<br>`--verbose` |  |  set verbose execution | <ins>default=<mark>_false_</mark></ins> |
+| `-v`<br>`--verbose` |  |  set verbose execution | <ins>default=<mark>_quiet execution_</mark></ins> |
 | `-V`<br>`--version` |  |  print version and exit |  |
 | `-h`<br>`--help` |  |  print syntax and exit |  |
 
