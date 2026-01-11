@@ -173,7 +173,7 @@ Thu 11 Dec 20:49:55 GMT 2025
 
 This is an example of `KPop`-based classifier. [The original input FASTA file](test/Primer/clusters-small.fasta), which is the result of a phylogenetic simulation, contains 1000 sequences having names such as `S2-C1`, meaning "sequence 2 belonging to class 1". There are 10 different classes and 100 sequences per class. In the following sections we will see in more detail how `KPop` can be used to classify sequences, but here, to give a quick summary:
 1. [Sequences with an odd index](test/Primer/Train/Train.fasta) are taken to be part of the training set, [sequences with an even index](test/Primer/Test/Test.fasta) are considered part of the test set
-2. [An additional file](test/Primer/Train/CLASS.txt) is provided, specifying the class labels for each sequence belonging to the training set as the content of a metadata field named `CLASS`. This, the class labels, is the only input that `KPop` needs to generate a classifier in addition to the sequences
+2. [An additional file](test/Primer/Train/CLASS.txt) is provided, specifying the class labels for each sequence belonging to the training set as the content of a metadata field named `CLASS`. This information, the class labels, is the only input that `KPop` needs to generate a classifier in addition to the sequences
 3. The command
    ```bash
    export K=5; KPopCount -k $K -f "" Train/Train.fasta -o Train-$K -v
@@ -182,7 +182,7 @@ This is an example of `KPop`-based classifier. [The original input FASTA file](t
    ```bash
    KPopCountDB -i Train-$K -O /dev/stdout | less
    ```
-   Note that while the complete name of the *k*-mer database is `Train-5.KPopSpectra`, you refer to it as to `Train-5` &mdash; the `.KPopSpectra` extension is autmatically added by the programs and does not need to be specified explicitly.
+   Note that while the complete name of the *k*-mer database is `Train-5.KPopSpectra`, you just refer to it as to `Train-5` &mdash; the `.KPopSpectra` extension is autmatically added by the programs and does not need to be specified explicitly
 4. In the command
    ```bash
    KPopCountDB -i Train-$K -m Train/CLASS.txt -c CLASS -o /dev/stdout | KPopTwist -i /dev/stdin -o Class-$K -v
