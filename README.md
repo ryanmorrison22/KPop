@@ -2,21 +2,19 @@
 
 # `KPop`: Unleash the full power of your *k*-mers!
 
-`KPop` is an assembly-free and scalable method for the comparative analysis of microbial genomes and environmental samples. It is based on full *k*-mer spectra and dataset-specific transformations; it allows to accurately compare hundreds of thousands of assembled, or thousands of unassembled microbial genomes or sequenced samples, in a matter of hours. It provides excellent resolution across a very large number of use cases and applications. More details can be found in our [Genome Biology paper](https://doi.org/10.1186/s13059-025-03585-8).
+`KPop` is a scalable method for the comparative analysis of microbial genomes and environmental samples; it transforms each input sequence or sample into a point (also called "vector" or "embedding") living in an abstract space with a moderate number of dimensions. `KPop` is based on full *k*-mer spectra and dataset-specific transformations; it allows to accurately compare hundreds of thousands of assembled, or thousands of unassembled microbial genomes or sequenced samples, in a matter of hours. It provides excellent resolution across a very large number of use cases and applications, even when the underlying genomic diversity is low. More details can be found in our [Genome Biology paper](https://doi.org/10.1186/s13059-025-03585-8).
 
-Some easy-to-use Nextflow-based `KPop` workflows implemented by Ryan Morrison can be found [here](https://github.com/ryanmorrison22/kpop-workflow).
+Some easy-to-use Nextflow-orchestrated `KPop` workflows implemented by Ryan Morrison can be found [here](https://github.com/ryanmorrison22/kpop-workflow).
 
 The `KPop` project gratefully acknowledges funding by several institutions, which allowed development to continue over a number of years:
-
-<table style="border: none;">
- <tbody>
-  <tr>
-   <td style="border: none;"><img src="./images/HPRU-GED-Logo.png"></img></td>
-   <td style="border: none;"><a href="https://neardata.eu"><img src="./images/NEARDATA-Logo.svg"></img></a></td>
-   <td style="border: none;"><img src="./images/RESAS-Logo.jpg"></img></td>
-   <td style="border: none;"><a href="https://bbsrc.ac.uk"><img src="./images/BBSRC-Logo.svg"></img></a></td>
-  </tr>
- </tbody>
+<table>
+ <tr>
+  <td>The <a href="https://www.nihr.ac.uk/">NIHR</a>'s HPRU GED</td>
+  <td rowspan="4"><img src="images/Logos.png"></td>
+ </tr>
+ <tr><td><a href="https://neardata.eu">The European Union's NEARDATA</a></td></tr>
+ <tr><td><a href="https://www.gov.scot/publications/environment-agriculture-and-food-strategic-research-main-research-providers/">The Scottish Government's RESAS</a></td></tr>
+ <tr><td>The <a href="https://www.ukri.org/councils/bbsrc/">BBSRC</a> for providing <a href="https://www.cropdiversity.ac.uk/">computing resources.</a></td></tr>
 </table>
 
 And finally, the awesome `KPop` logo was created by [Emily Fotopoulou](https://github.com/EmilyFotopoulou), to whom our heartfelt thanks go!
@@ -76,7 +74,7 @@ Note that the binaries are generated according to the recipe described [here](ht
 
 ### 0.3. Manual install
 
-Alternatively, you can install `KPop` manually by cloning and compiling its sources. You'll need an up-to-date distribution of the OCaml compiler and the [Dune package manager](https://github.com/ocaml/dune) for that. Both can be installed through [OPAM](https://opam.ocaml.org/), the official OCaml distribution system. Once you have a working OPAM distribution you'll also have a working OCaml compiler, and Dune can be installed with the command
+Alternatively, you can install `KPop` manually by cloning and compiling its sources. You'll need an up-to-date distribution of the OCaml compiler and the [Dune package manager](https://github.com/ocaml/dune) for that. Both can be installed through [`opam`](https://opam.ocaml.org/), the official OCaml distribution system. Once you have a working `opam` distribution you'll also have a working OCaml compiler, and Dune can be installed with the command
 ```bash
 opam install dune
 ```
@@ -103,14 +101,15 @@ ca
 
 ## 1. Quick start
 
-Download the directory `Primer` from the directory `test` in the repository. Then run the following commands (throughout this documentation we'll assume that you're using a fairly up-to-date version of `bash`):
+Download the directory `Primer` from the directory `test` in the repository. Then enter it and run the following commands (throughout this documentation we'll assume that you're using a fairly up-to-date version of `bash`):
 
 ```bash
 export K=5
 date
 KPopCount -k $K -f "" Train/Train.fasta -o Train-$K -v
-KPopCountDB -i Train-$K -m Train/CLASS.txt -c CLASS -o /dev/stdout | KPopTwist -i /dev/stdin -o Class-$K -v
-KPopCount -k $K -f "" Test/Test.fasta -o /dev/stdout | KPopTwistDB -i T Class-$K -t /dev/stdin -d Class-$K /dev/stdout -v | awk -F '\t' 'BEGIN{count=0} {split($1,s,"-"); if (s[2]!=$6) ++count} END{print count}'
+KPopCountDB -i Train-$K -m Train/CLASS.txt -c CLASS -o /dev/stdout | KPopTwist -i /dev/stdin -o Classes-$K -v
+KPopCount -k $K -f "" Test/Test.fasta -o /dev/stdout | KPopTwistDB -i T Classes-$K -t /dev/stdin -d Classes-$K Test-$K -v
+echo -n ">>> Misclassified sequences: "; cat Test-$K.KPopSummary.txt | awk -F '\t' 'BEGIN{count=0} {split($1,s,"-"); if (s[2]!=$6) ++count} END{print count}'
 date
 ```
 
@@ -163,46 +162,45 @@ Thu 11 Dec 2025 20:49:55 GMT: All done.
                      KPop version 740 [11-Dec-2025]
  │ (c) 2022-2025 Paolo Ribeca <paolo.ribeca@gmail.com>
        2024      Ünsal Öztürk <uensal.oeztuerk@gmail.com>
-(KPop__Twister.of_binary): Reading twister from file 'Class-5.KPopTwister'... done.
+(KPop__Twister.of_binary): Reading twister from file 'Classes-5.KPopTwister'... done.
 (KPop__KMerDB_Base.of_binary): Reading database from file '/dev/stdin'... done.
 (KPop__Twister.add_twisted_from_database): Twisting spectra: done 500/500.
-(KPop__Twisted.of_binary): Reading vectors from file 'Class-5.KPopTwisted'... done.
+(KPop__Twisted.of_binary): Reading vectors from file 'Classes-5.KPopTwisted'... done.
 (KPop__Twisted.summarize_distances_rowwise): Writing distance digest to file '/dev/stdout': done 500/500 rows.
-0
+>>> Misclassified sequences: 0
 Thu 11 Dec 20:49:55 GMT 2025
 ```
 
-This is an example of `KPop`-based classifier. The input FASTA file [`clusters-small.fasta`](test/clusters-small.fasta) contains 1000 sequences having names such as `S2-C1`, meaning "sequence 2 belonging to class 1". There are 10 different classes. We will see how the process works in more detail in the following sections, but, to summarise:
-1. Sequences with an odd index are taken to be part of the training set, sequences with an even index are considered part of the test set
-2. For each class `C1`, `C2`, ... `C10`, if the variable CLASS contains the name of the class, the command
-   ```bash
-   cat clusters-small.fasta | awk -v CLASS=$CLASS '{nr=(NR-1)%4; ok=(nr==0?$0~("-"CLASS"$"):nr==1&&ok); if (ok) print}' | KPopCount -k $K -L -f /dev/stdin | KPopCountDB -k /dev/stdin -R "~." -A $CLASS -L $CLASS -N -D -t /dev/stdout
-   ```
-   runs `KPopCount` (with *k*=5) on each training sequence belonging to CLASS; the results, which are text files each one containing a list of *k*-mers with their respective frequencies, are concatenated and sent to `KPopCountDB` through a pipe &mdash; if you wanted to look into the format, you could do so with the command
-   ```bash
-   cat clusters-small.fasta | awk -v CLASS=$CLASS '{nr=(NR-1)%4; ok=(nr==0?$0~("-"CLASS"$"):nr==1&&ok); if (ok) print}' | KPopCount -k $K -L -f /dev/stdin | less
-   ```
-   After that, `KPopCountDB` collects all spectra for each class into a temporary database, replaces them with a combination of the input spectra, names the combined spectrum `$CLASS`, and re-outputs it in the same format used before for the spectra produced by `KPopCount`
+This is an example of `KPop`-based classifier. [The original input FASTA file](test/Primer/clusters-small.fasta), which is the result of a phylogenetic simulation, contains 1000 sequences having names such as `S2-C1`, meaning "sequence 2 belonging to class 1". There are 10 different classes and 100 sequences per class. In the following sections we will see in more detail how `KPop` can be used to classify sequences, but here, to give a quick summary:
+1. [Sequences with an odd index](test/Primer/Train/Train.fasta) are taken to be part of the training set, [sequences with an even index](test/Primer/Test/Test.fasta) are considered part of the test set
+2. [An additional file](test/Primer/Train/CLASS.txt) is provided, specifying the class labels for each sequence belonging to the training set as the content of a metadata field named `CLASS`. This information, the class labels, is the only input that `KPop` needs to generate a classifier in addition to the sequences
 3. The command
    ```bash
-   KPopCountDB -k /dev/stdin -o Classes.$K -v
+   export K=5; KPopCount -k $K -f "" Train/Train.fasta -o Train-$K -v
    ```
-   receives the 10 spectra, one per class, and outputs them to a binary database called `Classes.5` (actually that corresponds to a file, which gets automatically named `Classes.5.KPopCounter`)
-4. The command
+   runs `KPopCount` (with *k*=5) on the training sequences and computes a separate "spectrum" (i.e., a vector of *k*-mer occurrencies) for each sequence; the result is stored in a table called `Train-5.KPopSpectra`. Although the table is stored in binary format, you could print it out as text and look into its content (both counts and metadata) with the command
    ```bash
-   KPopTwist -i Classes.$K -o Classes.$K -v
+   KPopCountDB -i Train-$K -O /dev/stdout | less
    ```
-   "twists" spectra to a reduced-dimensionality space, storing the results in binary form (actually that corresponds to two files, which are automatically named `Classes.5.KPopTwister` and `Classes.5.KPopTwisted`). Both the twisted spectra and the "twister" &mdash; i.e., the operator that can be used to convert the original spectra to twisted space &mdash; are stored and can be reused later on
-5. The command
+   Note that while the complete name of the *k*-mer database is `Train-5.KPopSpectra`, you just refer to it as to `Train-5` &mdash; the `.KPopSpectra` extension is autmatically added by the programs and does not need to be specified explicitly
+4. In the command
    ```bash
-   cat clusters-small.fasta | awk -v K="$K" '{nr=(NR-1)%4; if (nr==2) split($0,s,"[>-]"); if (nr==3) print ">"s[2]"-"s[3]"\n"$0}' | KPopCount -k $K -L -f /dev/stdin | KPopTwistDB -i T Classes.$K -k /dev/stdin -o t /dev/stdout | KPopTwistDB -i T Classes.$K -i t Classes.$K -s /dev/stdin Test_prediction.$K -v
+   KPopCountDB -i Train-$K -m Train/CLASS.txt -c CLASS -o /dev/stdout | KPopTwist -i /dev/stdin -o Classes-$K -v
    ```
-   selects test sequences, runs each of them separately through `KPopCount` to produce a spectrum, and concatenates and pipes all the spectra thus generated to `KPopTwistDB`, which twists them according to the twister generated at the previous stage (named `Classes.5`). The results are output to a summary text file, which gets automatically named `Test_prediction.5.KPopSummary.txt`. The file contains information about the two closest classes for each sequence
-6. Finally, the command
+   `KPopCountDB` loads the database we just generated, adds to it as metadata the sequence labels present in file `CLASS.txt`, and combines all the sequences belonging to each class into a single representative. It then outputs the results to standard output and passes them through a pipe to program `KPopTwist`, which "twists" the class representatives into vectors (i.e., points) belonging to a reduced-dimensionality space. Both the twisted spectra and the "twister" &mdash; i.e., the operator that can be used to convert the original spectra to twisted space &mdash; are stored as binary tables (files `Classes-5.KPopTwisted` and `Classes-5.KPopTwister`, respectively) that can be reused later on. As before, we did not need to explicitly specify file extensions; and as before, we could look into the binary files and convert them into plain text tables. For instance, we could visualise the twisted vectors by saying
    ```bash
-   echo -n ">>> Misclassified sequences: "; cat Test_prediction.$K.KPopSummary.txt | awk -F '\t' 'BEGIN{OFS="\t"} {$1=gensub("-","\t",1,$1); print}' | awk -F '\t' '{if ($2!=$7) print}' | wc -l
+   KPopTwistDB -i t Classes-$K -O t /dev/stdout | less
    ```
-   parses the results in `Test_prediction.5.KPopSummary.txt` and computes the number of misclassified sequences.
+6. The command
+   ```bash
+   KPopCount -k $K -f "" Test/Test.fasta -o /dev/stdout | KPopTwistDB -i T Classes-$K -t /dev/stdin -d Classes-$K Test-$K -v
+   ```
+   uses `KPopCount` to produce a separate spectrum for each test sequence in `Test.fasta`, sending them through a pipe to `KPopTwistDB`; `KPopTwistDB` then twists them according to the twister generated at the previous stage (named `Classes-5.KPopTwisted` and referred to on the command line simply as to `Classes-5`) and computes distances between the twisted test sequences and the class representatives stored in `Classes-5.KPopTwisted` (which, again, we refer to only as to `Classes-5` without having to explicitly specify an extension). The results are output to a summary plain-text file, which gets automatically named `Test-5.KPopSummary.txt`. It contains information about the two closest classes for each sequence
+7. Finally, the command
+   ```bash
+   echo -n ">>> Misclassified sequences: "; cat Test-$K.KPopSummary.txt | awk -F '\t' 'BEGIN{count=0} {split($1,s,"-"); if (s[2]!=$6) ++count} END{print count}'
+   ```
+   parses the classification results present in `Test-5.KPopSummary.txt` and computes the number of misclassified sequences, of which there appears to be none.
 
 Congratulations! You have now moved your first steps in the fascinating world of `KPop`.
 
@@ -285,35 +283,42 @@ As explained in our [Genome Biology paper](https://doi.org/10.1186/s13059-025-03
 ```
 where $C^k_{h s}$ is a non-zero count for *k*-mer $h$ in sample $s$ and there are $n_h$ non-zero *k*-mers. I.e., you would select the $k$ maximising the minimum across samples of the ratio between the maximum non-zero count and the (harmonic) mean of the non-zero counts for each sample.
 
+### This is too complicated. Help please!
+
+We do realise that a method such as `KPop` might look a bit less straightforward than others that are popular in the domain of bioinformatics. On the other hand, `KPop` is also very versatile and can be applied to a number of radically different use cases, which usually pays off once you have managed to go past the initial learning curve. As for us, we constantly strive to simplify usage and command lines with every new revision and version, so that all programs become progressively less cluttered with options and easier to use. We believe a good demonstration of this strategy can be seen in the upcoming version 2 programs &mdash; despite them containing significantly more functionality than version 1, syntax has been drastically simplified and the main `KPop` use cases can now be implemented with a few simple commands.
+
+If you still think that all this is too complicated for you, do not despair! Some easy-to-use Nextflow-orchestrated `KPop` workflows can be found [here](https://github.com/ryanmorrison22/kpop-workflow); they implement typical use cases end-to-end and might be sufficient for what you need to do. We will add more in the future, as the need for them becomes clearer and their implementation stabilises.
+
 ## 3. Overview of commands
 
 `KPop` is implemented as a suite of different programs, which can be combined into complex workflows in a modular fashion. They are:
-* [`KPopCount`](#41-kpopcount). It implements extraction of *k*-mer spectra from files containing sequences or sequencing reads (in FASTA format; and both single- and paired-end FASTQ format)
-* [`KPopCountDB`](#42-kpopcountdb). It implements collection of *k*-mer spectra into binary databases, allowing the user to export the resulting objects as either binary files or text tables. Spectra can be transformed before export
-* [`KPopTwist`](#43-kpoptwist). It implements the unsupervised generation of coordinate transformations (or "twisters") from databases of *k*-mer spectra. Each transformation is optimised for the database at hand, and turns ("twists") *k*-mer spectra into numerical vectors of a typically very much reduced dimensionality. The transformation can be stored as a binary object for future use
+* [`KPopCount`](#41-kpopcount). It implements extraction of *k*-mer spectra from files containing sequences, sequencing reads or general text (in FASTA format; in both single- and paired-end FASTQ format; in tabular format). Several encoding modes (alphabet- and dictionary-based) and *k*-mer extraction schemes (plain and gapped) are supported as of version 2. The resulting collections of *k*-mer spectra are exported as binary databases
+* [`KPopCountDB`](#42-kpopcountdb). It implements complex manipulations on binary databases of *k*-mer spectra, so that the user can: operate tranformations on counts; annotate counts with metadata; combine sets of spectra; export databases to text tables; and more
+* [`KPopTwist`](#43-kpoptwist). It implements the unsupervised generation of coordinate transformations (or "twisters") from databases of *k*-mer spectra. Each transformation is optimised for the database at hand, and turns ("twists") *k*-mer spectra into numerical vectors of a typically very much reduced dimensionality. Both the transformation and the resulting twisted spectra can be stored as a binary object for future use
 * [`KPopTwistDB`](#44-kpoptwistdb). It implements a number of operations on twisted spectra. It can: use an existing twister to twist *k*-mer spectra; generate databases of twisted spectra and output/input them as binary files or text tables; compute and summarise distances between twisted spectra; and more.
 
 ### 3.1. General design
 
-While `KPopCount` and `KPopTwist` implement one-shot operations (computing spectra from sequences and generating a twister, respectively), `KPopCountDB` and `KPopTwistDB` need to be versatile and perform a number of complex tasks, ranging from householding ones (management of spectra and twisted spectra, respectively) to complex operations that are an essential component of larger workflows.
+While `KPopTwist` implements a one-shot operation (generating a twister), `KPopCount`, `KPopCountDB` and `KPopTwistDB` need to be versatile and perform a number of complex tasks, ranging from householding management of spectra and twisted spectra to complex operations that are an essential component of larger workflows.
 
-In response to such needs, `KPopCountDB` and `KPopTwistDB` are able to execute a series of *actions*. Actions are specified each one as a different command line option, and performed in order of specification &mdash; i.e., saying something like `KPopCountDB -D -N` is *not* the same as saying `KPopCountDB -N -D`.
+In response to such needs, all programs apart from `KPopTwist` are able to execute a series of *actions*. Actions are specified each one as a different command line option, and performed in order of specification &mdash; i.e., saying something like `KPopCountDB -D -N` is *not* the same as saying `KPopCountDB -N -D`.
 
-In addition, both `KPopCountDB` and `KPopTwistDB` have *registers*, i.e., slots to/from which the contents of external files and the results of computations can be loaded/saved. You can see registers as program variables, each one having a specific type. For instance, the `KPop` programs know that only twisters can be loaded to/saved from twister registers, and will enforce that by requiring and checking that your external file has the correct extension (`.KPopTwister`) and format when doing I/O to/from a twister register.
+In addition, `KPopCount`, `KPopCountDB` and `KPopTwistDB` have *registers*, i.e., slots to/from which the contents of external files and the results of computations can be loaded/saved. You can see registers as program variables, each one having a specific type. For instance, the `KPop` programs know that only twisters can be loaded to/saved from twister registers, and will enforce that by requiring and checking that your external file has the correct extension (`.KPopTwister`) and format when doing I/O to/from a twister register.
+
+`KPopCount` has one register:
+* a *database* register, holding a set of *k*-mer spectra (i.e., a set of *k*-mers and their associated frequencies). There is one spectrum per sample, and more spectra can be added to the database as input files are processed.
 
 `KPopCountDB` has two registers:
 * a *database* register, holding a set of *k*-mer spectra (i.e., a set of *k*-mers and their associated frequencies). There is one spectrum per sample, and additional metadata in the form of strings or numbers can be associated to the samples (see our [Genome Biology paper](https://doi.org/10.1186/s13059-025-03585-8) for more information). Due to space optimisation reasons, modifications of the database happen in-place
-* a *selection* register, holding a set of sample labels. Labels can be specified on the command line or read from the database present in the database register. Collective operations (selection, deletion, combination, and so on) can be performed on the samples present in the database register according to the set of sample names specified by the selection register, which acts as a guide to enable complex operations on the database. For instance, one might extract from the database all the sample names matching some regular expression and put them in the selection register, add some more sample names to the selection register, and finally delete from the database all the samples whose names do not appear in the selection register.
+* a *selection* register, holding a set of sample labels. Labels can be specified on the command line or read from the database present in the database register. Collective operations (selection, deletion, combination, and so on) can be performed on the samples present in the database register according to the set of sample names specified by the selection register, which acts as a guide to enable complex operations on the database. For instance, one might extract from the database all the sample names matching some regular expression and put them in the selection register, add some more sample names to the selection register, and finally delete from the database all the samples whose names do not appear in the selection register. (Note that collective operations on the spectra can also be specified through metadata fields.)
 
-`KPopTwistDB` has four registers:
+`KPopTwistDB` has two registers:
 * a *twister* register holding a twister, i.e., an object able to transform *k*-mer spectra to "twisted" embeddings/vectors in an abstract `KPop` space (note that the transformation is dataset-dependent and generated by the user when runnning `KPopTwist` on a set of spectra, as explained in our [Genome Biology paper](https://doi.org/10.1186/s13059-025-03585-8) and [the next section](#32-building-workflows))
-* a *twisted* register holding "twisted" vectors, i.e., `KPop` embeddings of biological sequences into an abstract `KPop` space
-* a *metrics* register holding a metric, i.e., a vector of numbers specifying the relevance of each one of the dimensions of the `KPop` space (see our [Genome Biology paper](https://doi.org/10.1186/s13059-025-03585-8) for more details)
-* a *distance* register holding a distance matrix between couples of samples. The matrix can be computed between the vectors present in the twisted register and themselves, or between the vectors present in the twisted register and those present in an external file containing twisted vectors.
+* a *twisted* register holding "twisted" vectors, i.e., `KPop` embeddings of biological sequences into an abstract `KPop` space.
 
-Options are provided to write content from/to these registers, both in binary and textual form &mdash; the latter can be used, for instance, to import/export data from/to `R`. In addition to input/output to/from registers, both `KPopCountDB` and `KPopTwistDB` are able to read and process external files containing *k*-mer spectra in the format produced by `KPopCount` &mdash; this ensures that new spectra/twisted spectra can be added to their respective databases. A figure showing some of the available data transformations and formats can be found in [the next section](#32-building-workflows).
+Options are provided to write content from/to these registers, both in binary and textual form &mdash; the latter can be used, for instance, to import/export data from/to `R`. In addition to input/output to/from registers, both `KPopCountDB` and `KPopTwistDB` are able to read and process external database files containing *k*-mer spectra in the format produced by `KPopCount` &mdash; this ensures that new spectra/twisted spectra can be added to their respective registers. A figure showing some of the available data transformations and formats can be found in [the next section](#32-building-workflows).
 
-In general, registers provide "memory" (or a "state" in computer science parlance) to `KPopCountDB` and `KPopTwistDB` &mdash; by using them and the rich set of command line options we implemented, one can easily combine `KPop` programs and build complex workflows performing sophisticated tasks (see the section on [examples](#5-examples) below).
+In general, registers provide "memory" (or a "state" in computer science parlance) to `KPopCount`, `KPopCountDB` and `KPopTwistDB` &mdash; by using them and the rich set of command line options we implemented, one can easily combine `KPop` programs and build complex workflows performing sophisticated tasks (see the section on [examples](#5-examples) below).
 
 ### 3.2. Building workflows
 
