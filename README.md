@@ -177,21 +177,19 @@ This is an example of `KPop`-based classifier. [The original input FASTA file](t
    ```bash
    export K=5; KPopCount -k $K -f "" Train/Train.fasta -o Train-$K -v
    ```
-   runs `KPopCount` (with *k*=5) on the training sequences and computes a separate "spectrum" (i.e., a vector of *k*-mer occurrencies) for each sequence; the result is stored in a table called ``. Although the table is stored in binary format, you could print it out as text and look into it with the command
+   runs `KPopCount` (with *k*=5) on the training sequences and computes a separate "spectrum" (i.e., a vector of *k*-mer occurrencies) for each sequence; the result is stored in a table called `Train-5.KPopSpectra`. Although the table is stored in binary format, you could print it out as text and look into its content (both counts and metadata) with the command
    ```bash
-   cat clusters-small.fasta | awk -v CLASS=$CLASS '{nr=(NR-1)%4; ok=(nr==0?$0~("-"CLASS"$"):nr==1&&ok); if (ok) print}' | KPopCount -k $K -L -f /dev/stdin | less
+   KPopCountDB -i Train-$K -O /dev/stdout | less
    ```
-   After that, `KPopCountDB` collects all spectra for each class into a temporary database, replaces them with a combination of the input spectra, names the combined spectrum `$CLASS`, and re-outputs it in the same format used before for the spectra produced by `KPopCount`
-4. The command
+   Note that while the complete name of the *k*-mer database is `Train-5.KPopSpectra`, you refer to it as to `Train-5` &mdash; the `.KPopSpectra` extension is autmatically added by the programs and does not need to be specified explicitly.
+4. In the command
    ```bash
-   KPopCountDB -k /dev/stdin -o Classes.$K -v
+   KPopCountDB -i Train-$K -m Train/CLASS.txt -c CLASS -o /dev/stdout | KPopTwist -i /dev/stdin -o Class-$K -v
    ```
-   receives the 10 spectra, one per class, and outputs them to a binary database called `Classes.5` (actually that corresponds to a file, which gets automatically named `Classes.5.KPopCounter`)
-5. The command
+   `KPopCountDB` loads the database we just generated, adds to it as metadata the sequence labels present in file `CLASS.txt`, and combines all the sequences belonging to each class into a single representative. It then outputs the results to standard output and passes them through a pipe to program `KPopTwist`, which "twists" the class representatives into vectors &mdash; i.e., points &mdash; belonging to a reduced-dimensionality space. Both the twisted spectra and the "twister" &mdash; i.e., the operator that can be used to convert the original spectra to twisted space &mdash; are stored as binary tables (files `Class-5.KPopTwisted` and `Class-5.KPopTwister`, respectively) and can be reused later on. As before, we did not need to explicitly specify file extensions; and as before, we could look into the binary files and convert them into plain text tables. For instance, we could visualise twisted vectors by saying
    ```bash
-   KPopTwist -i Classes.$K -o Classes.$K -v
+   KPopTwistDB -i t Class-$K -O t /dev/stdout | less
    ```
-   "twists" spectra to a reduced-dimensionality space, storing the results in binary form (actually that corresponds to two files, which are automatically named `Classes.5.KPopTwister` and `Classes.5.KPopTwisted`). Both the twisted spectra and the "twister" &mdash; i.e., the operator that can be used to convert the original spectra to twisted space &mdash; are stored and can be reused later on
 6. The command
    ```bash
    cat clusters-small.fasta | awk -v K="$K" '{nr=(NR-1)%4; if (nr==2) split($0,s,"[>-]"); if (nr==3) print ">"s[2]"-"s[3]"\n"$0}' | KPopCount -k $K -L -f /dev/stdin | KPopTwistDB -i T Classes.$K -k /dev/stdin -o t /dev/stdout | KPopTwistDB -i T Classes.$K -i t Classes.$K -s /dev/stdin Test_prediction.$K -v
