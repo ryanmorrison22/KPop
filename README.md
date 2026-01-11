@@ -101,14 +101,15 @@ ca
 
 ## 1. Quick start
 
-Download the directory `Primer` from the directory `test` in the repository. Then run the following commands (throughout this documentation we'll assume that you're using a fairly up-to-date version of `bash`):
+Download the directory `Primer` from the directory `test` in the repository. Then enter it and run the following commands (throughout this documentation we'll assume that you're using a fairly up-to-date version of `bash`):
 
 ```bash
 export K=5
 date
 KPopCount -k $K -f "" Train/Train.fasta -o Train-$K -v
 KPopCountDB -i Train-$K -m Train/CLASS.txt -c CLASS -o /dev/stdout | KPopTwist -i /dev/stdin -o Class-$K -v
-KPopCount -k $K -f "" Test/Test.fasta -o /dev/stdout | KPopTwistDB -i T Class-$K -t /dev/stdin -d Class-$K /dev/stdout -v | awk -F '\t' 'BEGIN{count=0} {split($1,s,"-"); if (s[2]!=$6) ++count} END{print count}'
+KPopCount -k $K -f "" Test/Test.fasta -o /dev/stdout | KPopTwistDB -i T Class-$K -t /dev/stdin -d Class-$K Test-$K -v
+echo -n ">>> Misclassified sequences: "; cat Test-$K.KPopSummary.txt | awk -F '\t' 'BEGIN{count=0} {split($1,s,"-"); if (s[2]!=$6) ++count} END{print count}'
 date
 ```
 
@@ -166,11 +167,11 @@ Thu 11 Dec 2025 20:49:55 GMT: All done.
 (KPop__Twister.add_twisted_from_database): Twisting spectra: done 500/500.
 (KPop__Twisted.of_binary): Reading vectors from file 'Class-5.KPopTwisted'... done.
 (KPop__Twisted.summarize_distances_rowwise): Writing distance digest to file '/dev/stdout': done 500/500 rows.
-0
+>>> Misclassified sequences: 0
 Thu 11 Dec 20:49:55 GMT 2025
 ```
 
-This is an example of `KPop`-based classifier. [The original input FASTA file](test/Primer/clusters-small.fasta), which is the result of a phylogenetic simulation, contains 1000 sequences having names such as `S2-C1`, meaning "sequence 2 belonging to class 1". There are 10 different classes and 100 sequences per class. We will see how `KPop` can be used to classify sequences in more detail in the following sections, but here, to give a quick summary:
+This is an example of `KPop`-based classifier. [The original input FASTA file](test/Primer/clusters-small.fasta), which is the result of a phylogenetic simulation, contains 1000 sequences having names such as `S2-C1`, meaning "sequence 2 belonging to class 1". There are 10 different classes and 100 sequences per class. In the following sections we will see in more detail how `KPop` can be used to classify sequences, but here, to give a quick summary:
 1. [Sequences with an odd index](test/Primer/Train/Train.fasta) are taken to be part of the training set, [sequences with an even index](test/Primer/Test/Test.fasta) are considered part of the test set
 2. [An additional file](test/Primer/Train/CLASS.txt) is provided, specifying the class labels for each sequence belonging to the training set as the content of a metadata field named `CLASS`. This, the class labels, is the only input that `KPop` needs to generate a classifier in addition to the sequences
 3. The command
@@ -186,20 +187,20 @@ This is an example of `KPop`-based classifier. [The original input FASTA file](t
    ```bash
    KPopCountDB -i Train-$K -m Train/CLASS.txt -c CLASS -o /dev/stdout | KPopTwist -i /dev/stdin -o Class-$K -v
    ```
-   `KPopCountDB` loads the database we just generated, adds to it as metadata the sequence labels present in file `CLASS.txt`, and combines all the sequences belonging to each class into a single representative. It then outputs the results to standard output and passes them through a pipe to program `KPopTwist`, which "twists" the class representatives into vectors &mdash; i.e., points &mdash; belonging to a reduced-dimensionality space. Both the twisted spectra and the "twister" &mdash; i.e., the operator that can be used to convert the original spectra to twisted space &mdash; are stored as binary tables (files `Class-5.KPopTwisted` and `Class-5.KPopTwister`, respectively) and can be reused later on. As before, we did not need to explicitly specify file extensions; and as before, we could look into the binary files and convert them into plain text tables. For instance, we could visualise twisted vectors by saying
+   `KPopCountDB` loads the database we just generated, adds to it as metadata the sequence labels present in file `CLASS.txt`, and combines all the sequences belonging to each class into a single representative. It then outputs the results to standard output and passes them through a pipe to program `KPopTwist`, which "twists" the class representatives into vectors (i.e., points) belonging to a reduced-dimensionality space. Both the twisted spectra and the "twister" &mdash; i.e., the operator that can be used to convert the original spectra to twisted space &mdash; are stored as binary tables (files `Class-5.KPopTwisted` and `Class-5.KPopTwister`, respectively) and can be reused later on. As before, we did not need to explicitly specify file extensions; and as before, we could look into the binary files and convert them into plain text tables. For instance, we could visualise twisted vectors by saying
    ```bash
    KPopTwistDB -i t Class-$K -O t /dev/stdout | less
    ```
 6. The command
    ```bash
-   cat clusters-small.fasta | awk -v K="$K" '{nr=(NR-1)%4; if (nr==2) split($0,s,"[>-]"); if (nr==3) print ">"s[2]"-"s[3]"\n"$0}' | KPopCount -k $K -L -f /dev/stdin | KPopTwistDB -i T Classes.$K -k /dev/stdin -o t /dev/stdout | KPopTwistDB -i T Classes.$K -i t Classes.$K -s /dev/stdin Test_prediction.$K -v
+   KPopCount -k $K -f "" Test/Test.fasta -o /dev/stdout | KPopTwistDB -i T Class-$K -t /dev/stdin -d Class-$K Test-$K -v
    ```
-   selects test sequences, runs each of them separately through `KPopCount` to produce a spectrum, and concatenates and pipes all the spectra thus generated to `KPopTwistDB`, which twists them according to the twister generated at the previous stage (named `Classes.5`). The results are output to a summary text file, which gets automatically named `Test_prediction.5.KPopSummary.txt`. The file contains information about the two closest classes for each sequence
+   uses `KPopCount` to produce a separate spectrum for each test sequence in `Test.fasta`, sending them through a pipe to `KPopTwistDB`; `KPopTwistDB` then twists them according to the twister generated at the previous stage (named `Class-5.KPopTwisted` and referred to on the command line simply as to `Class-5`) and computes distances between the twisted test sequences and the class representatives stored in `Class-5.KPopTwisted` (which, again, we refer to only as `Class-5` without having to explicitly specify an extension). The results are output to a summary text file, which gets automatically named `Test-5.KPopSummary.txt. The file contains information about the two closest classes for each sequence
 7. Finally, the command
    ```bash
-   echo -n ">>> Misclassified sequences: "; cat Test_prediction.$K.KPopSummary.txt | awk -F '\t' 'BEGIN{OFS="\t"} {$1=gensub("-","\t",1,$1); print}' | awk -F '\t' '{if ($2!=$7) print}' | wc -l
+   echo -n ">>> Misclassified sequences: "; cat Test-$K.KPopSummary.txt | awk -F '\t' 'BEGIN{count=0} {split($1,s,"-"); if (s[2]!=$6) ++count} END{print count}'
    ```
-   parses the results in `Test_prediction.5.KPopSummary.txt` and computes the number of misclassified sequences.
+   parses the classification results present in `Test-5.KPopSummary.txt` and computes the number of misclassified sequences, of which there appear to be none.
 
 Congratulations! You have now moved your first steps in the fascinating world of `KPop`.
 
