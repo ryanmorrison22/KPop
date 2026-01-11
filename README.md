@@ -107,8 +107,8 @@ Download the directory `Primer` from the directory `test` in the repository. The
 export K=5
 date
 KPopCount -k $K -f "" Train/Train.fasta -o Train-$K -v
-KPopCountDB -i Train-$K -m Train/CLASS.txt -c CLASS -o /dev/stdout | KPopTwist -i /dev/stdin -o Class-$K -v
-KPopCount -k $K -f "" Test/Test.fasta -o /dev/stdout | KPopTwistDB -i T Class-$K -t /dev/stdin -d Class-$K Test-$K -v
+KPopCountDB -i Train-$K -m Train/CLASS.txt -c CLASS -o /dev/stdout | KPopTwist -i /dev/stdin -o Classes-$K -v
+KPopCount -k $K -f "" Test/Test.fasta -o /dev/stdout | KPopTwistDB -i T Classes-$K -t /dev/stdin -d Classes-$K Test-$K -v
 echo -n ">>> Misclassified sequences: "; cat Test-$K.KPopSummary.txt | awk -F '\t' 'BEGIN{count=0} {split($1,s,"-"); if (s[2]!=$6) ++count} END{print count}'
 date
 ```
@@ -162,10 +162,10 @@ Thu 11 Dec 2025 20:49:55 GMT: All done.
                      KPop version 740 [11-Dec-2025]
  │ (c) 2022-2025 Paolo Ribeca <paolo.ribeca@gmail.com>
        2024      Ünsal Öztürk <uensal.oeztuerk@gmail.com>
-(KPop__Twister.of_binary): Reading twister from file 'Class-5.KPopTwister'... done.
+(KPop__Twister.of_binary): Reading twister from file 'Classes-5.KPopTwister'... done.
 (KPop__KMerDB_Base.of_binary): Reading database from file '/dev/stdin'... done.
 (KPop__Twister.add_twisted_from_database): Twisting spectra: done 500/500.
-(KPop__Twisted.of_binary): Reading vectors from file 'Class-5.KPopTwisted'... done.
+(KPop__Twisted.of_binary): Reading vectors from file 'Classes-5.KPopTwisted'... done.
 (KPop__Twisted.summarize_distances_rowwise): Writing distance digest to file '/dev/stdout': done 500/500 rows.
 >>> Misclassified sequences: 0
 Thu 11 Dec 20:49:55 GMT 2025
@@ -185,17 +185,17 @@ This is an example of `KPop`-based classifier. [The original input FASTA file](t
    Note that while the complete name of the *k*-mer database is `Train-5.KPopSpectra`, you just refer to it as to `Train-5` &mdash; the `.KPopSpectra` extension is autmatically added by the programs and does not need to be specified explicitly
 4. In the command
    ```bash
-   KPopCountDB -i Train-$K -m Train/CLASS.txt -c CLASS -o /dev/stdout | KPopTwist -i /dev/stdin -o Class-$K -v
+   KPopCountDB -i Train-$K -m Train/CLASS.txt -c CLASS -o /dev/stdout | KPopTwist -i /dev/stdin -o Classes-$K -v
    ```
-   `KPopCountDB` loads the database we just generated, adds to it as metadata the sequence labels present in file `CLASS.txt`, and combines all the sequences belonging to each class into a single representative. It then outputs the results to standard output and passes them through a pipe to program `KPopTwist`, which "twists" the class representatives into vectors (i.e., points) belonging to a reduced-dimensionality space. Both the twisted spectra and the "twister" &mdash; i.e., the operator that can be used to convert the original spectra to twisted space &mdash; are stored as binary tables (files `Class-5.KPopTwisted` and `Class-5.KPopTwister`, respectively) and can be reused later on. As before, we did not need to explicitly specify file extensions; and as before, we could look into the binary files and convert them into plain text tables. For instance, we could visualise twisted vectors by saying
+   `KPopCountDB` loads the database we just generated, adds to it as metadata the sequence labels present in file `CLASS.txt`, and combines all the sequences belonging to each class into a single representative. It then outputs the results to standard output and passes them through a pipe to program `KPopTwist`, which "twists" the class representatives into vectors (i.e., points) belonging to a reduced-dimensionality space. Both the twisted spectra and the "twister" &mdash; i.e., the operator that can be used to convert the original spectra to twisted space &mdash; are stored as binary tables (files `Classes-5.KPopTwisted` and `Classes-5.KPopTwister`, respectively) that can be reused later on. As before, we did not need to explicitly specify file extensions; and as before, we could look into the binary files and convert them into plain text tables. For instance, we could visualise the twisted vectors by saying
    ```bash
-   KPopTwistDB -i t Class-$K -O t /dev/stdout | less
+   KPopTwistDB -i t Classes-$K -O t /dev/stdout | less
    ```
 6. The command
    ```bash
-   KPopCount -k $K -f "" Test/Test.fasta -o /dev/stdout | KPopTwistDB -i T Class-$K -t /dev/stdin -d Class-$K Test-$K -v
+   KPopCount -k $K -f "" Test/Test.fasta -o /dev/stdout | KPopTwistDB -i T Classes-$K -t /dev/stdin -d Classes-$K Test-$K -v
    ```
-   uses `KPopCount` to produce a separate spectrum for each test sequence in `Test.fasta`, sending them through a pipe to `KPopTwistDB`; `KPopTwistDB` then twists them according to the twister generated at the previous stage (named `Class-5.KPopTwisted` and referred to on the command line simply as to `Class-5`) and computes distances between the twisted test sequences and the class representatives stored in `Class-5.KPopTwisted` (which, again, we refer to only as `Class-5` without having to explicitly specify an extension). The results are output to a summary text file, which gets automatically named `Test-5.KPopSummary.txt. The file contains information about the two closest classes for each sequence
+   uses `KPopCount` to produce a separate spectrum for each test sequence in `Test.fasta`, sending them through a pipe to `KPopTwistDB`; `KPopTwistDB` then twists them according to the twister generated at the previous stage (named `Classes-5.KPopTwisted` and referred to on the command line simply as to `Classes-5`) and computes distances between the twisted test sequences and the class representatives stored in `Classes-5.KPopTwisted` (which, again, we refer to only as to `Classes-5` without having to explicitly specify an extension). The results are output to a summary text file, which gets automatically named `Test-5.KPopSummary.txt. The file contains information about the two closest classes for each sequence
 7. Finally, the command
    ```bash
    echo -n ">>> Misclassified sequences: "; cat Test-$K.KPopSummary.txt | awk -F '\t' 'BEGIN{count=0} {split($1,s,"-"); if (s[2]!=$6) ++count} END{print count}'
