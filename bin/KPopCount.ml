@@ -128,7 +128,7 @@ let () =
       Some "<positive_integer>",
       [ "set the hashing strategy to iteration over regular k-mers";
         "and specify the k-mer length to be used.";
-        "Options '-k' and '-g' are mutually exclusive; if multiple are specified";
+        "Options '-k' and '-g' are mutually exclusive; if multiple are specified,";
         "the last one will take effect" ],
       TA.Default
         ((match Defaults.hasher with
@@ -147,7 +147,7 @@ let () =
         " '-g 5 1'";
         "will iterate on all existing k-mers of size 11 (5+1+5) and not take the";
         "central nucleotide into account for the purpose of computing the hash.";
-        "Options '-k' and '-g' are mutually exclusive; if multiple are specified";
+        "Options '-k' and '-g' are mutually exclusive; if multiple are specified,";
         "the last one will take effect" ],
       TA.Default
         ((match Defaults.hasher with
@@ -232,7 +232,7 @@ let () =
         let path = TA.get_parameter () in
         Action.compact_add_sequences Parameters.program label (SingleEndFASTQ path));
     [ "-p"; "--paired-end" ],
-      Some "<fastq_file_name1> <fastq_file_name2> <label>",
+      Some "<label> <fastq_file_name1> <fastq_file_name2>",
       [ "process the sequences contained in the specified FASTQ input file";
         "containing paired-end sequencing reads.";
         "If a label is specified, the hashes extracted from all the sequences";
@@ -249,7 +249,7 @@ let () =
         let path2 = TA.get_parameter () in
         Action.compact_add_sequences Parameters.program label (PairedEndFASTQ (path1, path2)));
     [ "-t"; "--tabular" ],
-      Some "<fasta_file_name> <label>",
+      Some "<label> <tabular_file_name>",
       [ "process the sequences contained in the specified tabular input file.";
         "If a label is specified, the hashes extracted from all the sequences";
         "are collected into one spectrum having the label as name; if the label is";
