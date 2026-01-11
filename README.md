@@ -195,12 +195,12 @@ This is an example of `KPop`-based classifier. [The original input FASTA file](t
    ```bash
    KPopCount -k $K -f "" Test/Test.fasta -o /dev/stdout | KPopTwistDB -i T Classes-$K -t /dev/stdin -d Classes-$K Test-$K -v
    ```
-   uses `KPopCount` to produce a separate spectrum for each test sequence in `Test.fasta`, sending them through a pipe to `KPopTwistDB`; `KPopTwistDB` then twists them according to the twister generated at the previous stage (named `Classes-5.KPopTwisted` and referred to on the command line simply as to `Classes-5`) and computes distances between the twisted test sequences and the class representatives stored in `Classes-5.KPopTwisted` (which, again, we refer to only as to `Classes-5` without having to explicitly specify an extension). The results are output to a summary text file, which gets automatically named `Test-5.KPopSummary.txt. The file contains information about the two closest classes for each sequence
+   uses `KPopCount` to produce a separate spectrum for each test sequence in `Test.fasta`, sending them through a pipe to `KPopTwistDB`; `KPopTwistDB` then twists them according to the twister generated at the previous stage (named `Classes-5.KPopTwisted` and referred to on the command line simply as to `Classes-5`) and computes distances between the twisted test sequences and the class representatives stored in `Classes-5.KPopTwisted` (which, again, we refer to only as to `Classes-5` without having to explicitly specify an extension). The results are output to a summary plain-text file, which gets automatically named `Test-5.KPopSummary.txt`. It contains information about the two closest classes for each sequence
 7. Finally, the command
    ```bash
    echo -n ">>> Misclassified sequences: "; cat Test-$K.KPopSummary.txt | awk -F '\t' 'BEGIN{count=0} {split($1,s,"-"); if (s[2]!=$6) ++count} END{print count}'
    ```
-   parses the classification results present in `Test-5.KPopSummary.txt` and computes the number of misclassified sequences, of which there appear to be none.
+   parses the classification results present in `Test-5.KPopSummary.txt` and computes the number of misclassified sequences, of which there appears to be none.
 
 Congratulations! You have now moved your first steps in the fascinating world of `KPop`.
 
