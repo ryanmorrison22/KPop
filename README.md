@@ -9,12 +9,12 @@ Some easy-to-use Nextflow-based `KPop` workflows implemented by Ryan Morrison ca
 The `KPop` project gratefully acknowledges funding by several institutions, which allowed development to continue over a number of years:
 <table>
  <tr>
-  <td><a href="https://neardata.eu">The European Union's NEARDATA</a></td>
+  <td>The <a href="https://www.nihr.ac.uk/">NIHR</a>'s HPRU GED</td>
   <td rowspan="4"><img src="images/Logos.png"></td>
  </tr>
- <tr><td>The NIHR's HPRU GED</td></tr>
- <tr><td>The Scottish Government's RESAS</td></tr>
- <tr><td>The <a href="https://www.ukri.org/councils/bbsrc/">BBSRC</a> for providing <a href="https://www.cropdiversity.ac.uk/">computing resources</a></td></tr>
+ <tr><td><a href="https://neardata.eu">The European Union's NEARDATA</a></td></tr>
+ <tr><td><a href="https://www.gov.scot/publications/environment-agriculture-and-food-strategic-research-main-research-providers/">The Scottish Government's RESAS</a></td></tr>
+ <tr><td>The <a href="https://www.ukri.org/councils/bbsrc/">BBSRC</a> for providing <a href="https://www.cropdiversity.ac.uk/">computing resources.</a></td></tr>
 </table>
 
 And finally, the awesome `KPop` logo was created by [Emily Fotopoulou](https://github.com/EmilyFotopoulou), to whom our heartfelt thanks go!
@@ -282,6 +282,12 @@ As explained in our [Genome Biology paper](https://doi.org/10.1186/s13059-025-03
   }
 ```
 where $C^k_{h s}$ is a non-zero count for *k*-mer $h$ in sample $s$ and there are $n_h$ non-zero *k*-mers. I.e., you would select the $k$ maximising the minimum across samples of the ratio between the maximum non-zero count and the (harmonic) mean of the non-zero counts for each sample.
+
+### This is too complicated. Help!
+
+We do realise that a method such as `KPop` might look a bit less straightforward than others that are popular in the domain of bioinformatics. On the other hand, `KPop` is also very versatile and can be applied to a number of radically different use cases, which usually pays off once you have managed to go past the initial learning curve. As for us, we constantly strive to simplify usage and command lines with every new revision and version, so that all programs become progressively less cluttered with options and easier to use. We believe a good demonstration of this strategy can be seen in the upcoming version 2 programs &mdash; despite them containing significantly more functionality than version 1, syntax has been drastically simplified and the main `KPop` use cases can now be implemented with a few simple commands.
+
+If you still think that all this is too complicated for you, do not despair! Some easy-to-use Nextflow-orchestrated `KPop` workflows can be found [here](https://github.com/ryanmorrison22/kpop-workflow); they implement typical use cases end-to-end and might be sufficient for what you need to do. We will add more in the future, as the need for them becomes clearer and their implementation stabilises.
 
 ## 3. Overview of commands
 
