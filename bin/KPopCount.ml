@@ -487,7 +487,6 @@ let () =
                 Array.iter
                   (fun (new_file_cntr, label, old_num_hashes, new_hashes, keys, vals) ->
                     file_cntr := max !file_cntr new_file_cntr;
-                    Numbers.Int.(num_reads ++ n_reads);
                     (* We update the hashes for the worker process that sent the result *)
                     let hashes_to_rows =
                       match IntHashtbl.find_opt hashes_to_rows_table pid with
@@ -525,7 +524,8 @@ let () =
                       (fun i key ->
                         KMerDB.add_counts_unsafe db col_idx !hashes_to_rows.(key) Numbers.F32BAVector.(vals.@(i)))
                       keys)
-                  res)
+                  res;
+                Numbers.Int.(num_reads ++ n_reads))
               !Parameters.threads;
           end;
           if !Parameters.verbose then
