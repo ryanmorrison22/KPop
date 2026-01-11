@@ -4,7 +4,7 @@
 
 `KPop` is an assembly-free and scalable method for the comparative analysis of microbial genomes and environmental samples. It is based on full *k*-mer spectra and dataset-specific transformations; it allows to accurately compare hundreds of thousands of assembled, or thousands of unassembled microbial genomes or sequenced samples, in a matter of hours. It provides excellent resolution across a very large number of use cases and applications. More details can be found in our [Genome Biology paper](https://doi.org/10.1186/s13059-025-03585-8).
 
-Some easy-to-use Nextflow-based `KPop` workflows implemented by Ryan Morrison can be found [here](https://github.com/ryanmorrison22/kpop-workflow).
+Some easy-to-use Nextflow-orchestrated `KPop` workflows implemented by Ryan Morrison can be found [here](https://github.com/ryanmorrison22/kpop-workflow).
 
 The `KPop` project gratefully acknowledges funding by several institutions, which allowed development to continue over a number of years:
 <table>
@@ -74,7 +74,7 @@ Note that the binaries are generated according to the recipe described [here](ht
 
 ### 0.3. Manual install
 
-Alternatively, you can install `KPop` manually by cloning and compiling its sources. You'll need an up-to-date distribution of the OCaml compiler and the [Dune package manager](https://github.com/ocaml/dune) for that. Both can be installed through [OPAM](https://opam.ocaml.org/), the official OCaml distribution system. Once you have a working OPAM distribution you'll also have a working OCaml compiler, and Dune can be installed with the command
+Alternatively, you can install `KPop` manually by cloning and compiling its sources. You'll need an up-to-date distribution of the OCaml compiler and the [Dune package manager](https://github.com/ocaml/dune) for that. Both can be installed through [`opam`](https://opam.ocaml.org/), the official OCaml distribution system. Once you have a working `opam` distribution you'll also have a working OCaml compiler, and Dune can be installed with the command
 ```bash
 opam install dune
 ```
@@ -170,33 +170,34 @@ Thu 11 Dec 2025 20:49:55 GMT: All done.
 Thu 11 Dec 20:49:55 GMT 2025
 ```
 
-This is an example of `KPop`-based classifier. The input FASTA file [`clusters-small.fasta`](test/clusters-small.fasta) contains 1000 sequences having names such as `S2-C1`, meaning "sequence 2 belonging to class 1". There are 10 different classes. We will see how the process works in more detail in the following sections, but, to summarise:
-1. Sequences with an odd index are taken to be part of the training set, sequences with an even index are considered part of the test set
-2. For each class `C1`, `C2`, ... `C10`, if the variable CLASS contains the name of the class, the command
+This is an example of `KPop`-based classifier. [The original input FASTA file](test/Primer/clusters-small.fasta), which is the result of a phylogenetic simulation, contains 1000 sequences having names such as `S2-C1`, meaning "sequence 2 belonging to class 1". There are 10 different classes and 100 sequences per class. We will see how `KPop` can be used to classify sequences in more detail in the following sections, but here, to give a quick summary:
+1. [Sequences with an odd index](test/Primer/Train/Train.fasta) are taken to be part of the training set, [sequences with an even index](test/Primer/Test/Test.fasta) are considered part of the test set
+2. [An additional file](test/Primer/Train/CLASS.txt) is provided, specifying the class labels for each sequence belonging to the training set as the content of a metadata field named `CLASS`. This, the class labels, is the only input that `KPop` needs to generate a classifier in addition to the sequences
+3. The command
    ```bash
-   cat clusters-small.fasta | awk -v CLASS=$CLASS '{nr=(NR-1)%4; ok=(nr==0?$0~("-"CLASS"$"):nr==1&&ok); if (ok) print}' | KPopCount -k $K -L -f /dev/stdin | KPopCountDB -k /dev/stdin -R "~." -A $CLASS -L $CLASS -N -D -t /dev/stdout
+   export K=5; KPopCount -k $K -f "" Train/Train.fasta -o Train-$K -v
    ```
-   runs `KPopCount` (with *k*=5) on each training sequence belonging to CLASS; the results, which are text files each one containing a list of *k*-mers with their respective frequencies, are concatenated and sent to `KPopCountDB` through a pipe &mdash; if you wanted to look into the format, you could do so with the command
+   runs `KPopCount` (with *k*=5) on the training sequences and computes a separate "spectrum" (i.e., a vector of *k*-mer occurrencies) for each sequence; the result is stored in a table called ``. Although the table is stored in binary format, you could print it out as text and look into it with the command
    ```bash
    cat clusters-small.fasta | awk -v CLASS=$CLASS '{nr=(NR-1)%4; ok=(nr==0?$0~("-"CLASS"$"):nr==1&&ok); if (ok) print}' | KPopCount -k $K -L -f /dev/stdin | less
    ```
    After that, `KPopCountDB` collects all spectra for each class into a temporary database, replaces them with a combination of the input spectra, names the combined spectrum `$CLASS`, and re-outputs it in the same format used before for the spectra produced by `KPopCount`
-3. The command
+4. The command
    ```bash
    KPopCountDB -k /dev/stdin -o Classes.$K -v
    ```
    receives the 10 spectra, one per class, and outputs them to a binary database called `Classes.5` (actually that corresponds to a file, which gets automatically named `Classes.5.KPopCounter`)
-4. The command
+5. The command
    ```bash
    KPopTwist -i Classes.$K -o Classes.$K -v
    ```
    "twists" spectra to a reduced-dimensionality space, storing the results in binary form (actually that corresponds to two files, which are automatically named `Classes.5.KPopTwister` and `Classes.5.KPopTwisted`). Both the twisted spectra and the "twister" &mdash; i.e., the operator that can be used to convert the original spectra to twisted space &mdash; are stored and can be reused later on
-5. The command
+6. The command
    ```bash
    cat clusters-small.fasta | awk -v K="$K" '{nr=(NR-1)%4; if (nr==2) split($0,s,"[>-]"); if (nr==3) print ">"s[2]"-"s[3]"\n"$0}' | KPopCount -k $K -L -f /dev/stdin | KPopTwistDB -i T Classes.$K -k /dev/stdin -o t /dev/stdout | KPopTwistDB -i T Classes.$K -i t Classes.$K -s /dev/stdin Test_prediction.$K -v
    ```
    selects test sequences, runs each of them separately through `KPopCount` to produce a spectrum, and concatenates and pipes all the spectra thus generated to `KPopTwistDB`, which twists them according to the twister generated at the previous stage (named `Classes.5`). The results are output to a summary text file, which gets automatically named `Test_prediction.5.KPopSummary.txt`. The file contains information about the two closest classes for each sequence
-6. Finally, the command
+7. Finally, the command
    ```bash
    echo -n ">>> Misclassified sequences: "; cat Test_prediction.$K.KPopSummary.txt | awk -F '\t' 'BEGIN{OFS="\t"} {$1=gensub("-","\t",1,$1); print}' | awk -F '\t' '{if ($2!=$7) print}' | wc -l
    ```
