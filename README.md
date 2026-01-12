@@ -476,10 +476,10 @@ KPopTwist -h
 ```
 in your terminal. You will see a header containing information about the version:
 ```
-This is KPopTwist version 20 [29-Feb-2024]
- compiled against: BiOCamLib version 245 [14-Feb-2024];
-                   KPop version 411 [01-Mar-2024]
- (c) 2022-2024 Paolo Ribeca <paolo.ribeca@gmail.com>
+This is KPopTwist version 30 [24-Oct-2025]
+ compiled against: BiOCamLib version 481 [10-Dec-2025];
+                   KPop version 740 [11-Dec-2025]
+ (c) 2022-2025 Paolo Ribeca <paolo.ribeca@gmail.com>
 ```
 followed by detailed information. The general form the command can be used is:
 ```
@@ -490,27 +490,25 @@ KPopTwist -i|--input <binary_input_prefix> -o|--output <binary_output_prefix> [O
 
 | Option | Argument(s) | Effect | Note(s) |
 |-|-|-|-|
-| `-f`<br>`-F`<br>`-s`<br>`-S`<br>`--fraction`<br>`--sampling`<br>`--sampling-fraction` | _fractional\_float_ |  fraction of the *k*\-mers to be considered and resampled before twisting | <ins>default=<mark>_1\._</mark></ins> |
-| `--threshold-counts` | _non\_negative\_integer_ |  set to zero all counts that are less than this threshold before transforming them\.<br>A fractional threshold between 0\. and 1\. is taken as a relative one with respect to the sum of all counts in the spectrum | <ins>default=<mark>_1_</mark></ins> |
-| `--power` | _non\_negative\_float_ |  raise counts to this power before transforming them\.<br>A power of 0 when the `pseudocounts` method is used performs a logarithmic transformation | <ins>default=<mark>_1\._</mark></ins> |
-| `--transform`<br>`--transformation` | `binary` _&#124;_ `power` _&#124;_ `pseudocounts` _&#124;_ `clr` |  transformation to apply to table elements | <ins>default=<mark>_normalize_</mark></ins> |
-| `-n`<br>`--normalize`<br>`--normalize-counts` | `true` _&#124;_ `false` |  whether to normalize spectra after transformation and before twisting | <ins>default=<mark>_true_</mark></ins> |
-| `--threshold-kmers` | _non\_negative\_integer_ |  compute the sum of all transformed (and possibly normalized) counts for each *k*\-mer, and eliminate *k*\-mers such that the corresponding sum is less than the largest sum rescaled by this threshold\.<br>This filters out *k*\-mers having low frequencies across all spectra | <ins>default=<mark>_0\._</mark></ins> |
+| `--keep`<br>`--keep-kmers`<br>`--kmers-keep` | _kmer\_list\_file_ |  discard the *k*-mers not listed in this file before twisting the table\.<br>The file must contain one *k*-mer label per line and no header | <ins>default=<mark>_keep all_</mark></ins> |
+| `--sample`<br>`--sample-kmers`<br>`--kmers-sample` | _fractional\_float_ |  fraction of the *k*-mers to be randomly resampled and kept after parameter `-k` has been applied and before twisting | <ins>default=<mark>_1._</mark></ins> |
+| `--kmers-threshold` | _non\-negative\_integer_ |  compute the sum of all transformed (and possibly normalized) counts for each *k*-mer, and eliminate *k*-mers such that the corresponding sum is less than the largest sum rescaled by this threshold\.<br>This filters out *k*-mers having low frequencies across all spectra | <ins>default=<mark>_0._</mark></ins> |
 
 **Input/Output**
 
 | Option | Argument(s) | Effect | Note(s) |
 |-|-|-|-|
-| `-i`<br>`--input` | _binary\_file\_prefix_ |  load the specified *k*\-mer database in the register and twist it\.<br>File extension is automatically determined  (will be `.KPopCounter`)\.<br>The prefix is then re\-used for output  (and the output files will be given extensions   `.KPopTwister` and `.KPopTwisted`) | *(mandatory)* |
-| `-o`<br>`--output` | _binary\_file\_prefix_ |  use this prefix when dumping generated twister and twisted sequences\.<br>File extensions are automatically determined  (will be `.KPopTwister` and `.KPopTwisted` | *(mandatory)* |
+| `-i`<br>`--input` | _binary\_file\_prefix_ |  load the specified *k*-mer database in the register and twist it\.<br>File extension is automatically determined  (will be `.KPopSpectra` unless file is `/dev/*`) | *(mandatory)* |
+| `-o`<br>`--output` | _binary\_file\_prefix_ |  use this prefix when saving generated twister and twisted sequences\.<br>File extensions are automatically determined  (will be `.KPopTwister` and `.KPopTwisted` unless file is `/dev/*`) | *(mandatory)* |
+| `-k`<br>`--output-kmers`<br>`--output-twisted-kmers` | _binary\_file\_prefix_ |  use this prefix when saving generated twisted *k*-mers\.<br>File extension is automatically determined  (will be `.KPopTwisted` unless file is `/dev/*`) | <ins>default=<mark>_do not output_</mark></ins> |
 
 **Miscellaneous**
 
 | Option | Argument(s) | Effect | Note(s) |
 |-|-|-|-|
 | `-T`<br>`--threads` | _computing\_threads_ |  number of concurrent computing threads to be spawned  (default automatically detected from your configuration) | <ins>default=<mark>_nproc_</mark></ins> |
-| `--keep-temporaries` |  |  keep temporary files rather than deleting them in the end | <ins>default=<mark>_false_</mark></ins> |
-| `-v`<br>`--verbose` |  |  set verbose execution | <ins>default=<mark>_false_</mark></ins> |
+| `--keep-temporaries` |  |  keep temporary files rather than deleting them in the end | <ins>default=<mark>_do\_not\_keep_</mark></ins> |
+| `-v`<br>`--verbose` |  |  set verbose execution | <ins>default=<mark>_quiet\_execution_</mark></ins> |
 | `-V`<br>`--version` |  |  print version and exit |  |
 | `-h`<br>`--help` |  |  print syntax and exit |  |
 
