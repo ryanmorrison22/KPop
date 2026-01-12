@@ -244,7 +244,7 @@ let () =
         "using the current metric function, distance function and normalization.";
         "The result will be written to the specified tabular file.";
         "File extension is automatically assigned";
-        " (will be '.KPopVectors' unless file is '/dev/*')" ],
+        " (will be '.KPopVectors.txt' unless file is '/dev/*')" ],
       TA.Optional,
       (fun _ -> Embeddings_from_twisted (TA.get_parameter ()) |> List.accum Parameters.program);
     [ "--distances-summarize-at-most"; "--distances-in-summary" ],
