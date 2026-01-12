@@ -190,7 +190,7 @@ let () =
       (fun _ ->
         let register_type = TA.get_parameter () |> RegisterType.of_string in
         Register_to_tables (register_type, TA.get_parameter ()) |> List.accum Parameters.program);
-    TA.make_separator_multiline [ ""; "Actions on the database register - Other operations:" ];
+    TA.make_separator_multiline [ ""; "Actions on the database registers - Other operations:" ];
     [ "-t"; "--twist"; "--twist-kmers"; "--twist-spectra" ],
       Some "<binary_file_prefix>",
       [ "twist the k-mer spectra contained in the specified binary database";
@@ -227,7 +227,7 @@ let () =
         "The parameter for 'minkowski' is the power.";
         "Note that:";
         " 'euclidean' is the same as 'minkowski(2)';";
-        " 'cosine' is the same as ('euclidean'^2)/2, or 1 - cos theta;";
+        " 'cosine' is the same as ('euclidean'^2)/2, or 1 - cos(theta);";
         " 'angle' is the same as arccos(1 - ('euclidean'^2)/2), or theta,";
         "where theta is the relative angle between the two embeddings" ],
       TA.Default (Space.Distance.to_string Defaults.distance |> Fun.const),
@@ -283,8 +283,8 @@ let () =
     [ "--neighbors-index-type"; "--neighbors-faiss-index-type" ],
       Some "'flat'|'pq('PQ_PARAMETERS')'|'hnsw('<positive_integer>')'",
       [ "where PQ_PARAMETERS :=";
-        " <positive_integer>','<positive_integer>' :";
-        "set the type of Faiss index used to compute nearest neighbors.";
+        " <positive_integer>','<positive_integer>'";
+        "Set the type of Faiss index used to compute nearest neighbors.";
         "Parameters for 'pq' are:";
         " number of subquantizers; bits per subquantizer.";
         "Note that the product of the two must be less than or equal to";

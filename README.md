@@ -418,7 +418,7 @@ KPopCountDB [ACTIONS]
 **Actions.**
 They are executed delayed and in order of specification.
 
-Actions on the database register \- Input/Output operations:
+Actions on the database register &mdash; Input/Output operations:
 
 | Option | Argument(s) | Effect | Note(s) |
 |-|-|-|-|
@@ -434,7 +434,7 @@ Actions on the database register \- Input/Output operations:
 | `--Output-zero-kmers`<br>`--Output-zero-k-mers` | `true` _&#124;_ `false` |  whether to output *k*-mers whose frequencies are all zero when writing the database as tabular files | <ins>default=<mark>`true`</mark></ins> |
 | `-O`<br>`--Output` | _tabular\_file\_prefix_ |  write the database present in the register as tab\-separated files\.<br>File extensions are automatically assigned  (will be `.KPopKMatrix.txt` and `.KPopMMatrix.txt`,   unless file is `/dev/*`) |  |
 
-Actions on the database register \- Other operations:
+Actions on the database register &mdash; Other operations:
 
 | Option | Argument(s) | Effect | Note(s) |
 |-|-|-|-|
@@ -522,45 +522,65 @@ KPopTwistDB -h
 ```
 in your terminal. You will see a header containing information about the version:
 ```
-This is KPopTwistDB version 28 [28-Feb-2024]
- compiled against: BiOCamLib version 245 [14-Feb-2024];
-                   KPop version 411 [01-Mar-2024]
- (c) 2022-2024 Paolo Ribeca <paolo.ribeca@gmail.com>
+This is KPopTwistDB version 47 [09-Nov-2025]
+ compiled against: BiOCamLib version 481 [10-Dec-2025];
+                   KPop version 740 [11-Dec-2025]
+ (c) 2022-2025 Paolo Ribeca <paolo.ribeca@gmail.com>
+     2024      Ünsal Öztürk <uensal.oeztuerk@gmail.com>
 ```
 followed by detailed information. The general form the command can be used is:
 ```
 KPopTwistDB [ACTIONS]
 ```
 
-**Actions.**
-They are executed delayed and in order of specification.
+**Actions\.**
+They are executed delayed and in order of specification\.
+
+Actions on the database registers &mdash; Input/Output operations:
 
 | Option | Argument(s) | Effect | Note(s) |
 |-|-|-|-|
-| `-e`<br>`--empty` | `T`_&#124;_`t`_&#124;_`d` |  load an empty database into the specified register  (`T`=twister; `t`=twisted; `d`=distance) |  |
-| `-i`<br>`--input` | `T`_&#124;_`t`_&#124;_`d` _binary\_file\_prefix_ |  load the specified binary database into the specified register  (`T`=twister; `t`=twisted; `d`=distance)\.<br>File extension is automatically determined depending on database type  (will be: `.KPopTwister`; `.KPopTwisted`; or `.KPopDMatrix`, respectively) |  |
-| `-I`<br>`--Input` | `T`_&#124;_`t`_&#124;_`d` _table\_file\_prefix_ |  load the specified tabular database(s) into the specified register  (`T`=twister; `t`=twisted; `d`=distance)\.<br>File extension is automatically determined depending on database type  (will be: `.KPopTwister.txt` and `.KPopInertia.txt`; `.KPopTwisted.txt`;   or `.KPopDMatrix.txt`, respectively) |  |
-| `-a`<br>`--add` | `t`_&#124;_`d` _binary\_file\_prefix_ |  add the contents of the specified binary database to the specified register  (`t`=twisted; `d`=distance)\.<br>File extension is automatically determined depending on database type  (will be: `.KPopTwisted`; or `.KPopDMatrix`, respectively) |  |
-| `-A`<br>`--Add` | `t`_&#124;_`d` _table\_file\_prefix_ |  add the contents of the specified tabular database to the specified register  (`t`=twisted; `d`=distance)\.<br>File extension is automatically determined depending on database type  (will be: `.KPopTwisted.txt`; or `.KPopDMatrix.txt`, respectively) |  |
-| `-k`<br>`--kmers`<br>`--add-kmers`<br>`--add-kmer-files` | _k\-mer\_table\_file\_name\[`,`_\.\.\.`,`_k\-mer\_table\_file\_name\]_ |  twist *k*\-mers from the specified files through the transformation present in the twister register, and add the results to the database present in the twisted register |  |
-| `--distance`<br>`--distance-function`<br>`--set-distance`<br>`--set-distance-function` | `euclidean` _&#124;_ `cosine` _&#124;_ `minkowski(`_non\_negative\_float_`)` |  set the function to be used when computing distances\.<br>The parameter for `minkowski` is the power\.<br>Note that `euclidean` is the same as `minkowski(2)`, and `cosine` is the same as (`euclidean`^2)/2 | <ins>default=<mark>_euclidean_</mark></ins> |
-| `--distance-normalization`<br>`--set-distance-normalization` | `true` _&#124;_ `false` |  set whether twisted vectors should be normalized prior to computing distances | <ins>default=<mark>_true_</mark></ins> |
-| `-m`<br>`--metric`<br>`--metric-function`<br>`--set-metric`<br>`--set-metric-function` | `flat` _&#124;_ `powers(`_POWERS\_PARAMETERS_`)` |  where _POWERS\_PARAMETERS :=  non\_negative\_float_`,`_fractional\_float_`,`_non\_negative\_float_ :<br>set the metric function to be used when computing distances\.<br>Parameters are:  internal power; fractional accumulative threshold; external power\. | <ins>default=<mark>_powers(1,1,2)_</mark></ins> |
-| `-d`<br>`--distances`<br>`--compute-distances`<br>`--compute-twisted-distances` | _twisted\_binary\_file\_prefix_ |  compute distances between all the vectors present in the twisted register and all the vectors present in the specified twisted binary file  (which must have extension `.KPopTwisted`) using the metric provided by the twister present in the twister register\.<br>The result will be placed in the distance register |  |
-| `-o`<br>`--output` | `T`_&#124;_`t`_&#124;_`d` _binary\_file\_prefix_ |  dump the database present in the specified register  (`T`=twister; `t`=twisted; `d`=distance) to the specified binary file\.<br>File extension is automatically assigned depending on database type  (will be: `.KPopTwister`; `.KPopTwisted`; or `.KPopDMatrix`, respectively) |  |
-| `--precision`<br>`--set-precision`<br>`--set-table-precision` | _positive\_integer_ |  set the number of precision digits to be used when outputting numbers | <ins>default=<mark>_15_</mark></ins> |
-| `-O`<br>`--Output` | `T`_&#124;_`t`_&#124;_`d`_&#124;_`m` _table\_file\_prefix_ |  dump the database present in the specified register  (`T`=twister; `t`=twisted; `d`=distance; `m`=metric) to the specified tabular file(s)\.<br>File extension is automatically assigned depending on database type  (will be: `.KPopTwister.txt` and `.KPopInertia.txt`; `.KPopTwisted.txt`;   `.KPopDMatrix.txt`; or `.KPopMetrics.txt`, respectively) |  |
-| `-K`<br>`--keep-at-most`<br>`--set-keep-at-most`<br>`--summary-keep-at-most` | _positive\_integer_ _&#124;_ `all` |  set the maximum number of closest target sequences to be kept when summarizing distances\.<br>Note that more might be printed anyway in case of ties | <ins>default=<mark>_2_</mark></ins> |
-| `-s`<br>`--compute-and-summarize-distances`<br>`--compute-and-summarize-twisted-distances` | _twisted\_binary\_file\_prefix summary\_file\_prefix_ |  compute distances between all the vectors present in the twisted register and all the vectors present in the specified twisted binary file  (which must have extension `.KPopTwisted`) using the metric provided by the twister present in the twister register; summarize them and write the result to the specified tabular file\.<br>File extension is automatically assigned  (will be `.KPopSummary.txt`) |  |
-| `-S`<br>`--summarize-distances`<br>`--summarize-twisted-distances` | _summary\_file\_prefix_ |  summarize the distances present in the distance register and write the result to the specified tabular file\.<br>File extension is automatically assigned  (will be `.KPopSummary.txt`) |  |
+| `-0`<br>`--zero`<br>`--empty` | `T` _&#124;_ `t` |  load an empty database into the specified register  (`T`=twister; `t`=twisted) |  |
+| `-i`<br>`--input` | `T` _&#124;_ `t` |  load the specified binary database into the specified register  (`T`=twister; `t`=twisted).<br>File extension is automatically determined depending on database type  (will be `.KPopTwister` or `.KPopTwisted`, respectively,   unless file is `/dev/*`) |  |
+| `-I`<br>`--Input` | `T` _&#124;_ `t` |  load the specified tabular database\(s\) into the specified register  (`T`=twister; `t`=twisted)\.<br>File extension is automatically determined depending on database type  (will be: `.KPopTwister.txt` and `.KPopInertia.txt`; or: `.KPopInertia.txt` and `.KPopTwisted.txt`, respectively,   unless file is `/dev/*`) |  |
+| `-a`<br>`--add`<br>`--add-to-twisted` | _binary\_file\_prefix_ |  add the contents of the specified binary database to the twisted register\.<br>File extension is automatically determined  (will be `.KPopTwisted`, unless file is `/dev/*`) |  |
+| `-o`<br>`--output` | `T` _&#124;_ `t` |  save the database present in the specified register  (`T`=twister; `t`=twisted) to the specified binary file\.<br>File extension is automatically assigned depending on database type  (will be `.KPopTwister` or `.KPopTwisted`, respectively,   unless file is `/dev/*`) |  |
+| `--precision-for-tables` | _positive\_integer_ |  set how many precision digits should be used when outputting numbers in tabular formats | <ins>default=<mark>_15_</mark></ins> |
+| `-O`<br>`--Output` | `T` _&#124;_ `t` |  save the database present in the specified register  (`T`=twister; `t`=twisted) to the specified tabular files\.<br>File extensions are automatically assigned depending on database type  (will be: `.KPopTwister.txt` and `.KPopInertia.txt`;        or: `.KPopInertia.txt` and `.KPopTwisted.txt`, respectively,   unless file is `/dev/*`) |  |
 
-**Miscellaneous options.**
-They are set immediately.
+Actions on the database register &mdash; Other operations:
+
+| Option | Argument(s) | Effect | Note(s) |
+|-|-|-|-|
+| `-t`<br>`--twist`<br>`--twist-kmers`<br>`--twist-spectra` | _binary\_file\_prefix_ |  twist the *k*-mer spectra contained in the specified binary database according to the transformation present in the twister register, and add the results to the database loaded in the twisted register |  |
+| `-m`<br>`--metric`<br>`--metric-function` | `flat` _&#124;_ `powers(`_POWERS\_PARAMETERS_`)` |  where <br>&nbsp;_POWERS\_PARAMETERS := INTERNAL\_POWER_`,`_FRACTIONAL\_ACCUMULATIVE\_THRESHOLD_`,`_EXTERNAL\_POWER_<br>&nbsp;_INTERNAL\_POWER := non\-negative\_float_<br>&nbsp;_FRACTIONAL\_ACCUMULATIVE\_THRESHOLD := fractional\_float_<br>&nbsp;_EXTERNAL\_POWER := non\-negative\_float_<br>Set the metric function to be used when computing distances\.<br>The `power` transformation is computed as follows:<ol><li>the inertia vector is raised to _INTERNAL\_POWER_ and normalized;</li><li>elements are summed in order until _FRACTIONAL\_ACCUMULATIVE\_THRESHOLD_  (a number between 0. and 1.) is reached, while the elements above the threshold are set to zero</li><li>the resulting vector is raised to _EXTERNAL\_POWER_ and normalized.</li></ol>Note that  `flat` (which is equivalent to `power(0,1,1)` or `power(1,1,0)`) disregards inertia, i\.e\. it is the same as standard coordinates, while  `power(1,1,1)` leaves inertia unchanged, i\.e\. it is the same as principal coordinates | <ins>default=<mark>`powers(1,1,1)`</mark></ins> |
+| `--distance`<br>`--distance-function` | `euclidean` _&#124;_ `cosine` _&#124;_ `angle` _&#124;_ `minkowski(`_non\-negative\_float_`)` |  set the function to be used when computing distances\.<br>The parameter for `minkowski` is the power\.<br>Note that:<ul><li>`euclidean` is the same as `minkowski(2)`;</li><li>`cosine` is the same as (`euclidean`^2)/2, or 1 - cos(theta);</li><li>`angle` is the same as arccos(1 - (`euclidean`^2)/2), or theta,</li></ul>where theta is the relative angle between the two embeddings | <ins>default=<mark>`euclidean`</mark></ins> |
+| `--distance-normalize`<br>`--distance-normalization` | `true` _&#124;_ `false` |  whether to normalize twisted vectors before computing distances\.<br>It must be `true` when the distance function is `cosine` or `angle` | <ins>default=<mark>`false`</mark></ins> |
+| `-e`<br>`--embeddings`<br>`--compute-embeddings`<br>`--twisted-to-embeddings` | _tabular\_file\_prefix_ |  compute embeddings from the vectors present in the twisted register using the current metric function, distance function and normalization\.<br>The result will be written to the specified tabular file\.<br>File extension is automatically assigned  (will be `.KPopVectors` unless file is `/dev/*`) |  |
+| `--distances-summarize-at-most`<br>`--distances-in-summary` | _positive\_integer_ _&#124;_ `all` |  set the maximum number of closest sequences to be printed when summarizing distances\.<br>Note that more might be printed anyway in case of ties\.<br>The statistics in the summary will be computed on all sequences | <ins>default=<mark>_2_</mark></ins> |
+| `-d`<br>`--summarize-distances`<br>`--compute-and-summarize-distances` | _twisted\_binary\_file\_prefix summary\_file\_prefix_ |  for each vector present in the twisted register, compute distances to all vectors present in the specified twisted binary file  (which must have extension `.KPopTwisted` unless file is `/dev/*`) using the current metric function, distance function and normalization; summarize them and write the result to the specified tabular file\.<br>File extension is automatically assigned  (will be `.KPopSummary.txt` unless file is `/dev/*`) |  |
+| `-D`<br>`--summarize-and-output-distances`<br>`--compute-summarize-and-output-distances` | _twisted\_binary\_file\_prefix summary\_file\_prefix_ |  same as option `-d`, but additionally output the distance matrix in tabular form\.<br>File extensions are automatically assigned  (will be `.KPopSummary.txt` and `.KPopDMatrix.txt`,   unless file is `/dev/*`) |  |
+| `--neighbors-index-type`<br>`--neighbors-faiss-index-type` | `flat` _&#124;_ `pq(`_PQ\_PARAMETERS_`)` _&#124;_ `hnsw(`_positive\_integer_`)` |  where<br>&nbsp;_PQ\_PARAMETERS :=  positive\_integer_`,`_positive\_integer_<br>Set the type of Faiss index used to compute nearest neighbors\.<br>Parameters for `pq` are:  number of subquantizers; bits per subquantizer\.<br>Note that the product of the two must be less than or equal to the number of dimensions of the twisted vectors\.<br>The parameter for `hnsw` is  hyperparameter M\.<br>Note that some indices may not be able to return all the existing nearest neighbors | <ins>default=<mark>`hnsw(32)`</mark></ins> |
+| `--neighbors-summarize-at-most`<br>`--neighbors-in-summary` | _positive\_integer_ _&#124;_ `all` |  set the maximum number of closest sequences to be printed when summarizing nearest neighbors\.<br>Note that more might be printed anyway in case of ties\.<br>The statistics in the summary will be computed on all the neighbors explored according to the policy specified by option `--neighbors-guard-policy` | <ins>default=<mark>_6_</mark></ins> |
+| `--neighbors-guard-policy`<br>`--neighbors-exploration-policy` | `times(`_float\_no\_less\_than\_one`)` _&#124;_ `plus(`_non\-negative\_integer_`)` |  set the number of nearest neighbors to be explored when summarizing them\.<br>Note that this is greater than or equal to the number of neighbors specified with option `--neighbors-summarize-at-most`\.<br>Calling the latter _n_,  policy `times(`_m_`)` will explore _m\*n_ nearest neighbors, while  policy `plus(`_m_`)` will explore _m\+n_ nearest neighbors\.<br>The additional neighbors explored are not printed, but used to compute overall statistics | <ins>default=<mark>`times(2.)`</mark></ins> |
+| `-n`<br>`--summarize-neighbors`<br>`--find-and-summarize-neighbors` | _twisted\_binary\_file\_prefix summary\_file\_prefix_ |  for each vector present in the twisted register, find nearest neighbors among the vectors present in the specified twisted binary file  (which must have extension `.KPopTwisted` unless file is `/dev/*`) using the current metric function, distance function and normalization; summarize distances and write the result to the specified tabular file\.<br>File extension is automatically assigned  (will be `.KPopSummary.txt` unless file is `/dev/*`) |  |
+
+Experimental actions &mdash; They may be removed from future versions:
+
+| Option | Argument(s) | Effect | Note(s) |
+|-|-|-|-|
+| `--precision-for-splits` | _positive\_integer_ |  set how many precision digits should be used when outputting splits in plain\-text format | <ins>default=<mark>_10_</mark></ins> |
+| `--splits-algorithm` | `gaps` _&#124;_ `centroids` |  algorithm to use when computing splits from embeddings | <ins>default=<mark>`gaps`</mark></ins> |
+| `--splits-at-most`<br>`--splits-keep-at-most` | _positive\_integer_ _&#124;_ `all` |  set the maximum number of phylogenetic splits to be kept when generating them from embeddings | <ins>default=<mark>_10000_</mark></ins> |
+| `-S`<br>`--splits`<br>`--compute-splits`<br>`--twisted-to-splits` | _phylosplits\_tabular\_file\_prefix_ |  compute phylogenetic splits from the vectors present in the twisted register using the current metric function, distance function and normalization\.<br>The result will be written to the specified tabular file\.<br>File extension is automatically assigned  (will be `.PhyloSplits` unless file is `/dev/*`) |  |
+
+**Miscellaneous options\.**
+They are set immediately
 
 | Option | Argument(s) | Effect | Note(s) |
 |-|-|-|-|
 | `-T`<br>`--threads` | _computing\_threads_ |  number of concurrent computing threads to be spawned  (default automatically detected from your configuration) | <ins>default=<mark>_nproc_</mark></ins> |
-| `-v`<br>`--verbose` |  |  set verbose execution | <ins>default=<mark>_false_</mark></ins> |
+| `-v`<br>`--verbose` |  |  set verbose execution | <ins>default=<mark>_quiet execution_</mark></ins> |
 | `-V`<br>`--version` |  |  print version and exit |  |
 | `-h`<br>`--help` |  |  print syntax and exit |  |
 
