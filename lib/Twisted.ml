@@ -128,7 +128,7 @@ include (
         Float.Array.iter (Printf.eprintf " %.6g") metrics;
         Printf.eprintf " )\n%!"
       end;
-      { Matrix.which = Twisted;
+      { Matrix.which = Vectors;
         matrix =
           Matrix.Base.get_embeddings ~normalize ~threads ~elements_per_step ~verbose
             distance metrics t.twisted.matrix }
