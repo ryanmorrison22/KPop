@@ -1,64 +1,194 @@
 #!/usr/bin/env bash
 
-set -e
+set -euo pipefail
 
-PROFILE="$1"
-if [[ "$PROFILE" == "" ]]; then
-  PROFILE="dev"
+PROFILE="${1:-dev}"
+
+# Default compilers (override via env if needed)
+CC="${CC:-cc}"
+CXX="${CXX:-c++}"
+FC="${FC:-gfortran}"
+
+# Detect platform
+OS="$(uname -s)"
+ARCH="$(uname -m)"
+
+# Portable CPU count
+if command -v nproc >/dev/null 2>&1; then
+  NPROC=$(nproc)
+else
+  NPROC=$(sysctl -n hw.ncpu)
 fi
 
-if [[ "$BLAS_TARGET" == "" ]]; then
-  BLAS_TARGET="HASWELL"
+# BLAS target
+if [[ -z "${BLAS_TARGET:-}" ]]; then
+  if [[ "$ARCH" == "arm64" || "$ARCH" == "aarch64" ]]; then
+    BLAS_TARGET="ARMV8"
+  else
+    BLAS_TARGET="HASWELL"
+  fi
 fi
 
-# Always erase dune _build directory to ensure peace of mind
+echo "== Build configuration =="
+echo "PROFILE=$PROFILE"
+echo "CC=$CC"
+echo "CXX=$CXX"
+echo "FC=$FC"
+echo "NPROC=$NPROC"
+echo "BLAS_TARGET=$BLAS_TARGET"
+echo "ARCH=$ARCH"
+echo "OS=$OS"
+echo "=========================="
+
+# Clean OCaml build
 rm -rf _build
 
-# ...but we want to keep our build so as not to have to recompile OpenBLAS or faiss every time
+# Keep build cache dir but ensure it exists
 mkdir -p build
+mkdir -p lib
 
-rm -f lib/libopenblas.a
-rm -f lib/libfaiss.a
-rm -f lib/libinterfaiss.a
+rm -f lib/libopenblas.a lib/libfaiss.a lib/libinterfaiss.a
 
-# Build OpenBLAS
-( if [[ -f OpenBLAS/libopenblas.a ]]; then
-    cp OpenBLAS/libopenblas.a lib/
+########################################
+# OpenBLAS
+########################################
+if [[ -f OpenBLAS/libopenblas.a ]]; then
+  echo "Using cached OpenBLAS"
+  cp OpenBLAS/libopenblas.a lib/
+else
+  echo "Building OpenBLAS..."
+  pushd OpenBLAS
+
+  make -j "$NPROC" \
+    CC="$CC" \
+    FC="$FC" \
+    HOSTCC="$CC" \
+    TARGET="$BLAS_TARGET" \
+    NO_AVX="${NO_AVX:-0}" \
+    USE_OPENMP="${USE_OPENMP:-1}"
+
+  cp libopenblas.a ../lib/
+  popd
+fi
+
+########################################
+# FAISS
+########################################
+
+# Disable AVX on ARM
+if [[ "$ARCH" == "arm64" || "$ARCH" == "aarch64" ]]; then
+  FAISS_OPT_LEVEL="generic"
+  FAISS_TARGET="faiss"
+else
+  FAISS_OPT_LEVEL="avx2"
+  FAISS_TARGET="faiss_avx2"
+fi
+
+if [[ -f build/faiss/faiss/lib${FAISS_TARGET}.a ]]; then
+  echo "Using cached FAISS"
+  cp build/faiss/faiss/lib${FAISS_TARGET}.a lib/libfaiss.a
+else
+  echo "Building FAISS..."
+  mkdir -p build/faiss
+
+  pushd faiss
+
+  if [[ "$OS" == "Darwin" ]]; then
+    LIBOMP_PREFIX=$(brew --prefix libomp)
+    OMP_FLAGS=(
+      -D OpenMP_CXX_FLAGS="-Xpreprocessor -fopenmp -I${LIBOMP_PREFIX}/include"
+      -D OpenMP_CXX_LIB_NAMES="omp"
+      -D OpenMP_omp_LIBRARY="${LIBOMP_PREFIX}/lib/libomp.a"
+    )
   else
-    cd OpenBLAS
-    make -j "$(nproc)" CC="$(realpath ../compilers/cc)" FC="$(realpath ../compilers/fortran)" HOSTCC="$(realpath ../compilers/cc)" TARGET="$BLAS_TARGET" CROSS=1
-    cp libopenblas.a ../lib/
-  fi )
+    OMP_FLAGS=()
+  fi
 
-# Build faiss
-( if [[ -f build/faiss/faiss/libfaiss_avx2.a ]]; then
-    cp build/faiss/faiss/libfaiss_avx2.a lib/libfaiss.a
-  else
-    cd faiss
-    cmake -D CMAKE_VERBOSE_MAKEFILE=true -D CMAKE_CXX_COMPILER="$(realpath ../compilers/cxx)" -D BLAS_LIBRARIES="$(realpath ../OpenBLAS/libopenblas.a)" -D FAISS_ENABLE_GPU=false -D FAISS_ENABLE_PYTHON=false -D BUILD_TESTING=false -D CMAKE_BUILD_TYPE=Release -D FAISS_OPT_LEVEL=avx2 -B ../build/faiss .
-    cd ../build/faiss
-    make -j "$(nproc)" faiss_avx2
-    cp faiss/libfaiss_avx2.a ../../lib/libfaiss.a
-  fi )
+  cmake \
+    -D CMAKE_VERBOSE_MAKEFILE=true \
+    -D CMAKE_CXX_COMPILER="$CXX" \
+    -D BLAS_LIBRARIES="$(pwd)/../lib/libopenblas.a" \
+    -D LAPACK_LIBRARIES="$(pwd)/../lib/libopenblas.a" \
+    -D FAISS_ENABLE_GPU=false \
+    -D FAISS_ENABLE_PYTHON=false \
+    -D BUILD_TESTING=false \
+    -D CMAKE_BUILD_TYPE=Release \
+    -D FAISS_OPT_LEVEL="$FAISS_OPT_LEVEL" \
+    "${OMP_FLAGS[@]}" \
+    -B ../build/faiss .
 
-# Build interfaiss
-( cd lib
-  ../compilers/cxx -I ../faiss/ -O3 -fPIC -fopenmp -c -o libinterfaiss.o interfaiss.cpp
-  ar rcs libinterfaiss.a libinterfaiss.o
-  rm -f libinterfaiss.o )
+  popd
 
-# Build everything else
+  pushd build/faiss
+  make -j "$NPROC" "$FAISS_TARGET"
+  cp faiss/lib${FAISS_TARGET}.a ../../lib/libfaiss.a
+  popd
+fi
 
-# Emit version info for both BiOCamLib and KPop
-cd BiOCamLib && echo -e "include (\n  struct\n    let info = {\n      Tools.Argv.name = \"BiOCamLib\";\n      version = \"$(git log --pretty=format: --name-only | awk '{if ($0!="") print}' | wc -l)\";\n      date = \"$(date -d "@$(git log -1 --format="%at")" +%d-%b-%Y)\"\n    }\n  end\n)" > lib/Info.ml && cd ..
-echo -e "include (\n  struct\n    let info = {\n      BiOCamLib.Tools.Argv.name = \"KPop\";\n      version = \"$(git log --pretty=format: --name-only | awk '{if ($0!="") print}' | wc -l)\";\n      date = \"$(date -d "@$(git log -1 --format="%at")" +%d-%b-%Y)\"\n    }\n  end\n)" > lib/Info.ml
+########################################
+# interfaiss
+########################################
+echo "Building interfaiss..."
+pushd lib
 
-#FLAGS="--verbose"
+if [[ "$OS" == "Darwin" ]]; then
+  LIBOMP_PREFIX=$(brew --prefix libomp)
+  "$CXX" -std=c++17 -I ../faiss/ -O3 -fPIC \
+    -Xpreprocessor -fopenmp -I"${LIBOMP_PREFIX}/include" \
+    -c interfaiss.cpp -o libinterfaiss.o
+else
+  "$CXX" -std=c++17 -I ../faiss/ -O3 -fPIC -fopenmp -c interfaiss.cpp -o libinterfaiss.o
+fi
+ar rcs libinterfaiss.a libinterfaiss.o
+rm -f libinterfaiss.o
 
-dune build --profile="$PROFILE" bin/KPopCount.exe $FLAGS
-dune build --profile="$PROFILE" bin/KPopCountDB.exe $FLAGS
-dune build --profile="$PROFILE" bin/KPopTwist_.exe $FLAGS
-dune build --profile="$PROFILE" bin/KPopTwistDB.exe $FLAGS
+popd
+
+########################################
+# Version info (portable date)
+########################################
+
+LAST_COMMIT_DATE=$(git log -1 --format="%cd" --date=format:"%d-%b-%Y")
+VERSION=$(git rev-list --count HEAD)
+
+pushd BiOCamLib
+cat > lib/Info.ml <<EOF
+include (
+  struct
+    let info = {
+      Tools.Argv.name = "BiOCamLib";
+      version = "$VERSION";
+      date = "$LAST_COMMIT_DATE"
+    }
+  end
+)
+EOF
+popd
+
+cat > lib/Info.ml <<EOF
+include (
+  struct
+    let info = {
+      BiOCamLib.Tools.Argv.name = "KPop";
+      version = "$VERSION";
+      date = "$LAST_COMMIT_DATE"
+    }
+  end
+)
+EOF
+
+########################################
+# OCaml build
+########################################
+
+dune build --profile="$PROFILE" bin/KPopCount.exe
+dune build --profile="$PROFILE" bin/KPopCountDB.exe
+dune build --profile="$PROFILE" bin/KPopTwist_.exe
+dune build --profile="$PROFILE" bin/KPopTwistDB.exe
+
+########################################
+# Collect binaries
+########################################
 
 mv _build/default/bin/KPopCount.exe build/KPopCount
 mv _build/default/bin/KPopCountDB.exe build/KPopCountDB
@@ -67,10 +197,15 @@ mv _build/default/bin/KPopTwistDB.exe build/KPopTwistDB
 
 chmod 755 build/*
 
+########################################
+# Strip (release only)
+########################################
+
 if [[ "$PROFILE" == "release" || "$PROFILE" == "release-static" ]]; then
-  strip build/{KPopCount,KPopCountDB,KPopTwist_,KPopTwistDB}
+  strip build/* || true
   rm -rf _build
 fi
 
 cp src/KPop* build
 
+echo "✅ Build completed successfully"
