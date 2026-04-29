@@ -108,7 +108,7 @@ jobs:
           echo "=== KPopTwistDB ===" && ./build/KPopTwistDB --help || true
 
   build-linux-x86_64:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
         with:
@@ -144,7 +144,7 @@ jobs:
           files: ./build/*
 
   test-linux-x86_64:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     needs: build-linux-x86_64
     steps:
       - name: Download binaries
