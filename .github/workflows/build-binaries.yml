@@ -123,9 +123,6 @@ jobs:
       - name: Install system dependencies
         run: brew install cmake gcc coreutils llvm libomp
 
-      - name: Add LLVM to PATH
-        run: echo "$(brew --prefix llvm)/bin" >> $GITHUB_PATH
-
       - uses: ocaml/setup-ocaml@v3
         with:
           ocaml-compiler: 4.14.2
@@ -153,10 +150,6 @@ jobs:
           sed -i '' \
             "s|spawn_and_read_single_line \"nproc\"|spawn_and_read_single_line \"sh -c 'nproc 2>/dev/null \|\| sysctl -n hw.ncpu'\"|g" \
             BiOCamLib/lib/Processes.ml
-          echo "=== Patched bin/dune ==="
-          cat bin/dune
-          echo "=== Patched Processes.ml ==="
-          grep -n "spawn_and_read_single_line" BiOCamLib/lib/Processes.ml
 
       - name: Find gfortran and set compilers
         run: |
