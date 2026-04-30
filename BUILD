@@ -65,7 +65,7 @@ else
     EXTRA_FFLAGS=""
   fi
 
-  make -j "$NPROC" libs \
+  make -j "$NPROC" libs netlib \
     CC="$CC" \
     FC="$FC" \
     HOSTCC="$CC" \
