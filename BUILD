@@ -59,13 +59,21 @@ else
   echo "Building OpenBLAS..."
   pushd OpenBLAS
 
+  # On macOS, gfortran passes -flto by default which conflicts with the system linker
+  if [[ "$OS" == "Darwin" ]]; then
+    EXTRA_FC_FLAGS="FFLAGS=-fno-lto"
+  else
+    EXTRA_FC_FLAGS=""
+  fi
+
   make -j "$NPROC" \
     CC="$CC" \
     FC="$FC" \
     HOSTCC="$CC" \
     TARGET="$BLAS_TARGET" \
     NO_AVX="${NO_AVX:-0}" \
-    USE_OPENMP="${USE_OPENMP:-1}"
+    USE_OPENMP="${USE_OPENMP:-1}" \
+    ${EXTRA_FC_FLAGS}
 
   cp libopenblas.a ../lib/
   popd
