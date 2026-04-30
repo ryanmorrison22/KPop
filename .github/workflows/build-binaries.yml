@@ -160,7 +160,6 @@ jobs:
 
       - name: Find gfortran and set compilers
         run: |
-          # Intel Macs use /usr/local for Homebrew instead of /opt/homebrew
           GFORTRAN=$(ls /usr/local/bin/gfortran-* 2>/dev/null | head -1 || ls /opt/homebrew/bin/gfortran-* 2>/dev/null | head -1)
           GCC_VER=$(echo $GFORTRAN | grep -oE '[0-9]+$')
           GFORTRAN_LIB=$(ls -d /usr/local/lib/gcc/$GCC_VER 2>/dev/null | head -1 || ls -d /opt/homebrew/lib/gcc/$GCC_VER 2>/dev/null | head -1)
@@ -168,7 +167,7 @@ jobs:
           echo "Found gfortran: $GFORTRAN"
           echo "Found gfortran lib: $GFORTRAN_LIB"
           echo "FC=$GFORTRAN" >> $GITHUB_ENV
-          echo "CC=$(brew --prefix llvm)/bin/clang" >> $GITHUB_ENV
+          echo "CC=/usr/bin/clang" >> $GITHUB_ENV
           echo "CXX=$(brew --prefix llvm)/bin/clang++" >> $GITHUB_ENV
           echo "LIBRARY_PATH=$GFORTRAN_LIB:$LIBOMP_LIB:${LIBRARY_PATH:-}" >> $GITHUB_ENV
 
